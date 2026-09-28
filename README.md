@@ -1,67 +1,58 @@
 # TNT Reading Teams Tracker
 
-A Flask web application to track reading teams and their progress.
+Mobile-first web app that The Moody Church's Awana T&T leaders use on their phones on Wednesday nights. It
+records each kid's attendance items (Bible, Shirt, Book, Homework, Dues) and completed book sections
+(Main / Silver / Gold) per team, and shows the team points.
 
-## Features
-- Track students across different teams
-- Record reading sections completed
-- View team standings and individual progress
-- Easy student management interface
+- **Sign-in:** leaders sign in with their MinistryPlatform (MP) account. Only T&T Leaders (MP Group 1000) and
+  configured staff get in.
+- **Roster:** comes from MP Group 697 (T&T). Each kid's team (Red / Blue / Green / Yellow) is stored in MP.
+- **Check-in:** who is "here" comes from MP check-in at the kiosk. Leaders can mark a kid present when they
+  weren't checked in.
+- **Data:** attendance, sections and the schedule live in PostgreSQL (Neon). The totals match the original
+  Google Sheet formulas.
 
-## Setup
+Forked from [ovitisler/tnt_app](https://github.com/ovitisler/tnt_app) (MIT). This fork has diverged and does not
+track upstream.
 
-1. Clone the repository:
-```bash
-git clone https://github.com/ovitisler/tnt_app.git
-cd tnt
-```
-
-2. Create virtual environment and install dependencies:
-```bash
-uv venv .venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
-```
-
-Or with standard tools:
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-3. Set up Google Sheets:
-- Create a Google Cloud Project
-- Enable Google Sheets API
-- Create service account credentials
-- Download the credentials as `client_secret.json`
-- Share your Google Sheet with the service account email
-
-4. Run the application:
-```bash
-source .venv/bin/activate  # if not already activated
-python tnt.py
-```
-The app will be available at `http://localhost:5001`
-
-## Environment Variables
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `GOOGLE_SHEETS_CREDS` | Yes (prod) | — | Contents of `client_secret.json` |
-| `SHEET_NAME` | No | `TNT_App_Data` | Google Sheet name |
-| `CACHE_BACKEND` | No | `memory` | `memory` (in-process) or `redis` (Vercel KV) |
-| `REDIS_URL` | If redis | — | Vercel Redis connection string (auto-set by Vercel) |
-
-## Testing
+## Local development
 
 ```bash
-source .venv/bin/activate
-pytest tests/ -q
+docker run -d --name tnt-pg -e POSTGRES_PASSWORD=postgres -p 55432:5432 postgres:17
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+cp .env.example .env        # set DATABASE_URL, MP_CLIENT_ID/SECRET, SECRET_KEY, TNT_DATE_OVERRIDE, ...
+DATABASE_URL_UNPOOLED="$DATABASE_URL" .venv/bin/python scripts/migrate.py
+.venv/bin/python tnt.py     # http://localhost:5001 (sign in needs the MP client's localhost redirect URI)
 ```
 
-## Deployment
-Deployed on Vercel. See DEPLOYMENT.md for setup instructions.
+Tests run against a real Postgres (the container above) with MinistryPlatform faked:
+
+```bash
+.venv/bin/python -m pytest tests/ -q
+```
+
+## Environment variables
+
+`.env.example` documents every variable. The important ones:
+
+| Variable | Where | Purpose |
+|---|---|---|
+| `SECRET_KEY` | all | Session signing (32+ random chars; different per environment) |
+| `APP_BASE_URL` | all | Exact origin registered on the MP API client |
+| `DATABASE_URL` | Vercel | Neon **pooled** URL, least-privilege role `tnt_app` |
+| `DATABASE_URL_UNPOOLED` | laptop/CI only | Owner role, direct host: migrations and the sheet import |
+| `MINISTRY_PLATFORM_BASE_URL` | all | `https://moody.ministryplatform.com/ministryplatformapi` |
+| `MP_CLIENT_ID`, `MP_CLIENT_SECRET` | all | The dedicated TNT API client (sign-in + server calls) |
+| `ADMIN_USER_GROUP_IDS` | all | MP security User Groups whose members may also sign in |
+| `MP_WRITES_ENABLED` | all | Team assignment writes to MP (on by default only in production) |
+
+## Docs
+
+- [DEPLOYMENT.md](DEPLOYMENT.md): Vercel, Neon and MP API client setup.
+- [GUIDE.md](GUIDE.md): leader-facing how-to.
+- [docs/CUTOVER.md](docs/CUTOVER.md): moving off the Google Sheet.
+- [CLAUDE.md](CLAUDE.md): architecture and data rules.
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. 
+
+MIT, see [LICENSE](LICENSE).

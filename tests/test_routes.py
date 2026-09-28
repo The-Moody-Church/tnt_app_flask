@@ -67,6 +67,14 @@ def _flags(row):
     return {f: row[f] for f in FLAGS}
 
 
+def _chip(body, field):
+    """(aria-pressed, disabled) of the first attendance chip for `field` in `body`."""
+    m = re.search(rf'<button[^>]*\bdata-field="{field}"[^>]*>', body)
+    assert m, f'no {field} chip'
+    tag = m.group(0)
+    return re.search(r'aria-pressed="(\w+)"', tag)[1], bool(re.search(r'\sdisabled\b', tag))
+
+
 @pytest.fixture
 def night(seeded):
     """Tonight: Alice checked in at the kiosk (with her Bible); Gus the walk-in checked in with no team."""
@@ -95,7 +103,6 @@ def night(seeded):
     ('/attendance/2026-09-24', '/attendance'),
     ('/attendance/2026-09-24/team/Red', '/attendance'),
     ('/attendance/2026-09-24/team/Red/kid/1001', '/attendance'),
-    ('/attendance/2026-09-24/team/Red/checkin/1001', '/attendance'),
 ])
 def test_unknown_or_malformed_date_redirects_to_date_list(client, seeded, path, expected):
     """Dates that aren't a YYYY-MM-DD meeting go back to the list."""
@@ -112,7 +119,6 @@ TEAM_PAGES = [
     ('/home/{d}/team/{t}/kid/1001/section/1.2', '/home/{d}'),
     ('/attendance/{d}/team/{t}', '/attendance/{d}'),
     ('/attendance/{d}/team/{t}/kid/1001', '/attendance/{d}'),
-    ('/attendance/{d}/team/{t}/checkin/1001', '/attendance/{d}'),
 ]
 
 
@@ -137,7 +143,6 @@ def test_team_names_are_case_insensitive(client, seeded):
     f'/attendance/{D}/team/Unassigned',
     f'/attendance/{D}/team/unassigned',
     f'/attendance/{D}/team/Unassigned/kid/1007',
-    f'/attendance/{D}/team/Unassigned/checkin/1007',
     f'/home/{D}/team/Unassigned/record_section',
     f'/home/{D}/team/Unassigned/record_section/kid/1007',
     f'/home/{D}/team/Unassigned/record_section/kid/1007/section/1.2',
@@ -156,7 +161,6 @@ def test_home_team_page_rejects_unassigned(client, night):
 
 @pytest.mark.parametrize('path', [
     f'/attendance/{D}/team/Red/kid/9999',
-    f'/attendance/{D}/team/Red/checkin/9999',
     f'/attendance/{D}/team/Red/kid/abc',
     f'/home/{D}/team/Red/record_section/kid/9999',
     f'/home/{D}/team/Red/record_section/kid/9999/section/1.2',
@@ -183,7 +187,9 @@ def test_record_section_form_unknown_section_redirects_to_section_list(client, s
 
 @pytest.mark.parametrize('path, detail', [('/', '/home/'), ('/attendance', '/attendance/')])
 def test_date_lists_link_every_meeting_and_mark_today(client, seeded, path, detail):
-    body = _html(client.get(path))
+    resp = client.get(path)                         # TODAY is a club night: the tab opens tonight's page
+    assert resp.status_code == 302 and _loc(resp) == f'{detail}{D}'
+    body = _html(client.get(f'{path}?all=1'))       # 'All dates'
     for d in ('2026-09-09', '2026-09-16', '2026-09-23', '2026-09-30', '2026-10-07'):
         assert f'href="{detail}{d}"' in body
     assert re.search(rf'id="current-date"\s+href="{detail}2026-09-23"', body)
@@ -242,24 +248,31 @@ def test_team_attendance_shows_only_present_kids_by_default(client, night):
     assert '✋ Marked present' in body
     assert 'kid-status is-manual' in body
     assert f'href="/attendance/{D}/team/Red/kid/1001"' in body
+    assert f'data-url="/api/attendance/{D}/1001"' in body     # chip taps post here
     assert 'Gus Gray' not in body                       # the walk-in is Unassigned, not Red
 
 
 def test_team_attendance_hides_not_checked_in_kids_until_show_all(client, night):
+    """The not-checked-in group is in the page but hidden (CSS) until Show all, so the toggle is instant."""
     body = _html(client.get(f'/attendance/{D}/team/Red'))
     assert _summary(body) == (1, 1)
-    assert 'Bo Brandt' not in body
-    assert 'Not checked in (' not in body
-    assert f'href="/attendance/{D}/team/Red?show=all"' in body
+    assert '<div class="kid-board" data-kid-list>' in body
+    assert f'href="/attendance/{D}/team/Red?show=all" data-show-all-toggle' in body
+    here, absent = _groups(body)
+    assert 'Alice Anders' in here and 'Bo Brandt' not in here
+    assert 'Bo Brandt' in absent
 
     body = _html(client.get(f'/attendance/{D}/team/Red?show=all'))
     assert _summary(body) == (1, 1)
+    assert '<div class="kid-board show-all" data-kid-list>' in body
     here, absent = _groups(body)
     assert 'Alice Anders' in here and 'Bo Brandt' not in here
     assert 'Not checked in (1)' in body
     assert 'Bo Brandt' in absent
-    assert f'href="/attendance/{D}/team/Red/checkin/1002"' in absent
-    assert 'Tap to mark present' in absent
+    assert f'href="/attendance/{D}/team/Red/kid/1002"' in absent
+    assert f'data-url="/api/attendance/{D}/1002"' in absent
+    assert 'data-mark-present="on"' in absent and 'Mark present' in absent
+    assert 'chip-toggle' not in absent                  # items come after they're marked present
     assert 'Here only' in body
 
 
@@ -270,10 +283,13 @@ def test_team_attendance_empty_note_when_nobody_is_here(client, seeded):
 
 
 def test_team_attendance_future_date_is_read_only(client, seeded):
+    add_attendance(seeded, 1002, D_0930, mp_checked_in=True)          # e.g. an import typo
     body = _html(client.get(f'/attendance/{FUTURE}/team/Red?show=all'))
-    _, absent = _groups(body)
+    here, absent = _groups(body)
     assert 'Alice Anders' in absent
-    assert 'Tap to mark present' not in absent
+    assert 'data-mark-present' not in absent
+    assert 'Bo Brandt' in here
+    assert all(_chip(here, f) == ('false', True) for f in FLAGS)       # every chip disabled
 
 
 def test_inactive_kid_only_listed_when_they_have_a_row(client, seeded):
@@ -319,11 +335,13 @@ def test_unassigned_page_lists_the_walk_in(client, night):
     assert 'banner-warning' not in body
 
 
-def test_unassigned_page_show_all_links_to_checkin_form(client, seeded):
+def test_unassigned_page_show_all_offers_kid_page_and_mark_present(client, seeded):
     body = _html(client.get(f'/attendance/{D}/team/Unassigned?show=all'))
     assert _summary(body) == (0, 1)
     _, absent = _groups(body)
-    assert f'href="/attendance/{D}/team/Unassigned/checkin/1007"' in absent
+    assert f'href="/attendance/{D}/team/Unassigned/kid/1007"' in absent
+    assert f'data-url="/api/attendance/{D}/1007"' in absent
+    assert 'data-mark-present="on"' in absent
 
 
 def test_kid_name_is_escaped(client, seeded):
@@ -388,217 +406,230 @@ def test_kid_picker_unassigned(client, night):
     body = _html(client.get(f'/home/{D}/team/Unassigned/record_section'))
     assert _summary(body) == (1, 0)
     assert f'href="/home/{D}/team/Unassigned/record_section/kid/1007"' in body
-    assert f'<a class="back-btn" href="/home/{D}">' in body       # no Unassigned team page to go back to
+    assert f'<a class="back-btn" href="/home/{D}" aria-label="Back">' in body   # no Unassigned team page to go back to
     assert 'Alice Anders' not in body
 
 
 # =============================================================================
-# Kid attendance details and check-in form
+# Kid attendance details (instant toggles, Mark present / Undo)
 # =============================================================================
 
 def test_kid_details_mp_checkin_is_read_only_present(client, night):
     body = _html(client.get(f'/attendance/{D}/team/Red/kid/1001'))
     assert '✓ Checked in · 6:12pm' in body
-    assert 'name="manual_present"' not in body
-    assert 'can_mark_present' not in body
-    assert 'name="has_bible" checked' in body
-    assert 'class="edit-button"' in body
+    assert 'data-mark-present' not in body                  # a kiosk check-in can't be undone here
+    assert f'data-url="/api/attendance/{D}/1001"' in body
+    assert _chip(body, 'has_bible') == ('true', False)      # pressed, tappable
+    assert _chip(body, 'has_dues') == ('false', False)
+    assert 'hasn’t happened yet' not in body
 
 
-def test_kid_details_offers_manual_present_toggle_when_not_mp_checked_in(client, seeded):
+def test_kid_details_offers_mark_present_when_not_mp_checked_in(client, seeded):
     body = _html(client.get(f'/attendance/{D}/team/Red/kid/1002'))
-    assert 'name="can_mark_present" value="1"' in body
-    assert re.search(r'name="manual_present"\s*>', body)          # unchecked
+    assert 'data-mark-present="on"' in body and 'data-mark-present="off"' not in body
     assert 'present-status is-absent' in body
     assert 'Not checked in' in body
+    assert all(_chip(body, f) == ('false', True) for f in FLAGS)     # items wait for Present
+    assert 'Mark Bo present to record their items.' in body
 
 
-def test_kid_details_manual_present_shows_who(client, seeded):
-    add_attendance(seeded, 1002, D_0923, manual_present=True)
+def test_kid_details_manual_present_shows_who_and_undo(client, seeded):
+    add_attendance(seeded, 1002, D_0923, manual_present=True, has_book=True)
     seeded.execute("UPDATE attendance SET manual_present_by = 'Leader Lee' WHERE contact_id = 1002")
     body = _html(client.get(f'/attendance/{D}/team/Red/kid/1002'))
     assert '✋ Marked present by Leader Lee' in body
-    assert 'name="manual_present" checked' in body
-    assert 'name="can_mark_present" value="1"' in body
+    assert 'data-mark-present="off"' in body and 'data-mark-present="on"' not in body
+    assert _chip(body, 'has_book') == ('true', False)
+    assert _chip(body, 'has_bible') == ('false', False)
 
 
-def test_kid_details_future_date_has_no_edit_button(client, seeded):
+def test_kid_details_future_date_is_read_only(client, seeded):
     body = _html(client.get(f'/attendance/{FUTURE}/team/Red/kid/1001'))
-    assert 'class="edit-button"' not in body
-
-
-def test_checkin_form(client, seeded):
-    body = _html(client.get(f'/attendance/{D}/team/Blue/checkin/1003'))
-    assert 'name="manual_present" checked' in body
-    assert 'name="team" value="Blue"' in body
-    assert 'name="contact_id" value="1003"' in body
-    assert f'href="/attendance/{D}/team/Blue?show=all"' in body
-    future = _html(client.get(f'/attendance/{FUTURE}/team/Blue/checkin/1003'))
-    assert 'hasn’t happened yet' in future
-    assert 'name="manual_present"' not in future
+    assert 'data-mark-present' not in body
+    assert all(_chip(body, f)[1] for f in FLAGS)
+    assert 'hasn’t happened yet' in body
 
 
 # =============================================================================
-# POST /submit_checkin and /edit_attendance
+# POST /api/attendance/<date>/<contact_id>: chip taps, Mark present, Undo
 # =============================================================================
 
-def test_submit_checkin_marks_present_with_items(client, seeded, fake_mp):
-    resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1003', 'team': 'Blue',
-                                                'manual_present': 'on', 'has_bible': 'on', 'has_dues': 'on'})
-    assert resp.status_code == 200 and resp.get_json()['ok'] is True
-    assert _loc(resp) == f'/attendance/{D}/team/Blue'
-    row = _att(seeded, 1003)
-    assert row['manual_present'] and row['present'] and not row['mp_checked_in']
-    assert row['manual_present_at'] is not None
-    assert row['team'] == 'Blue' and row['source'] == 'app'
-    assert _flags(row) == {'has_bible': True, 'wearing_shirt': False, 'has_book': False,
-                           'did_homework': False, 'has_dues': True}
+def _set(client, contact_id, d=D, **fields):
+    return client.post(f'/api/attendance/{d}/{contact_id}', json={'set': fields})
+
+
+def _ok_row(resp):
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body['ok'] is True
+    assert resp.headers['Cache-Control'] == 'no-store'
+    return body['row']
+
+
+def _n_attendance(conn):
+    return conn.execute('SELECT COUNT(*) AS n FROM attendance').fetchone()['n']
+
+
+def test_mark_present_then_items(client, seeded, fake_mp):
+    """Mark present, then chip taps: each post sets only its own field."""
+    row = _ok_row(_set(client, 1003, manual_present=True))
+    assert row['contact_id'] == 1003 and row['present'] is True and row['source'] == 'manual'
+    assert row['present_label'] == 'Marked present by Test Leader'
+    assert not any(row[f] for f in FLAGS)
+    db = _att(seeded, 1003)
+    assert db['present'] and not any(_flags(db).values())
+
+    assert _ok_row(_set(client, 1003, has_bible=True))['has_bible'] is True
+    row = _ok_row(_set(client, 1003, has_dues=True))
+    assert row['has_bible'] is True and row['has_dues'] is True        # the Bible tap is kept
+    db = _att(seeded, 1003)
+    assert db['manual_present'] and db['present'] and not db['mp_checked_in']
+    assert db['manual_present_at'] is not None and db['manual_present_by'] == 'Test Leader'
+    assert db['team'] == 'Blue' and db['source'] == 'app'
+    assert _flags(db) == {'has_bible': True, 'wearing_shirt': False, 'has_book': False,
+                          'did_homework': False, 'has_dues': True}
     body = _html(client.get(f'/attendance/{D}/team/Blue'))
     assert 'Cara Cole' in _groups(body)[0]
     assert '✋ Marked present' in body
-    assert fake_mp.puts == []
+    assert fake_mp.puts == []                                           # attendance never writes to MP
 
 
-def test_submit_checkin_present_only(client, seeded):
-    resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1003', 'team': 'Blue',
-                                                'manual_present': 'on'})
-    assert resp.status_code == 200 and resp.get_json()['ok'] is True
-    row = _att(seeded, 1003)
-    assert row['present'] and not any(_flags(row).values())
+def test_mark_present_and_items_in_one_post(client, seeded):
+    row = _ok_row(_set(client, 1003, manual_present=True, wearing_shirt=True))
+    assert row['present'] and row['wearing_shirt']
+    assert _att(seeded, 1003)['wearing_shirt']
 
 
-NATIVE = {'X-Requested-With': ''}      # a plain HTML form post (no JavaScript)
-
-
-def test_submit_checkin_native_form_post_redirects_after_saving(client, seeded):
-    resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1003', 'team': 'Blue',
-                                                'manual_present': 'on'}, headers=NATIVE)
-    assert resp.status_code == 303
-    assert urlsplit(resp.headers['Location']).path == f'/attendance/{D}/team/Blue'
-    assert _att(seeded, 1003)['present']
-
-
-def test_submit_checkin_native_form_post_error_is_an_html_page(client, seeded):
-    resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1003', 'team': 'Blue',
-                                                'has_bible': 'on'}, headers=NATIVE)
-    assert resp.status_code == 409 and resp.mimetype == 'text/html'
-    assert resp.get_json(silent=True) is None
-    assert _att(seeded, 1003) is None
-
-
-@pytest.mark.parametrize('accept', ['application/json', 'application/json, text/html;q=0.5'])
-def test_submit_checkin_json_accept_gets_json(client, seeded, accept):
-    resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1003', 'team': 'Blue',
-                                                'manual_present': 'on'}, headers={**NATIVE, 'Accept': accept})
-    assert resp.status_code == 200 and resp.get_json()['ok'] is True
-
-
-def test_submit_checkin_items_without_present_is_409_and_saves_nothing(client, seeded):
-    resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1003', 'team': 'Blue',
-                                                'has_bible': 'on'})
+@pytest.mark.parametrize('existing_row', [False, True])
+def test_items_without_present_are_409_and_save_nothing(client, seeded, existing_row):
+    if existing_row:
+        add_attendance(seeded, 1003, D_0923)
+    resp = _set(client, 1003, has_bible=True)
     assert resp.status_code == 409
     body = resp.get_json()
-    assert body['ok'] is False and body['error'] == 'not_present'
-    assert _att(seeded, 1003) is None
+    assert body['ok'] is False and body['error'] == 'not_present' and body['message']
+    if existing_row:
+        assert not any(_flags(_att(seeded, 1003)).values())
+    else:
+        assert _att(seeded, 1003) is None
 
 
-def test_submit_checkin_items_without_present_keeps_existing_row(client, seeded):
-    add_attendance(seeded, 1003, D_0923)
-    resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1003', 'team': 'Blue',
-                                                'has_book': 'on'})
-    assert resp.status_code == 409
-    assert not any(_flags(_att(seeded, 1003)).values())
+def test_items_for_mp_checked_in_kid_set_only_that_item(client, night):
+    row = _ok_row(_set(client, 1001, wearing_shirt=True))
+    assert row['source'] == 'mp' and row['present_label'] == 'Checked in · 6:12pm'
+    db = _att(night, 1001)
+    assert db['mp_checked_in'] and not db['manual_present']
+    assert db['wearing_shirt'] and db['has_bible']              # her Bible from the night fixture is untouched
 
 
-def test_submit_checkin_items_for_mp_checked_in_kid(client, night):
-    resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1001', 'team': 'Red',
-                                                'wearing_shirt': 'on'})
-    assert resp.status_code == 200 and resp.get_json()['ok'] is True
-    row = _att(night, 1001)
-    assert row['mp_checked_in'] and not row['manual_present']
-    assert row['wearing_shirt'] and not row['has_bible']      # the form sends every flag
-
-
-def test_submit_checkin_unassigned_redirects_to_unassigned_list(client, seeded):
-    resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1007', 'team': 'Unassigned',
-                                                'manual_present': 'on'})
-    assert _loc(resp) == f'/attendance/{D}/team/Unassigned'
-    assert _att(seeded, 1007)['team'] is None
-
-
-@pytest.mark.parametrize('form, status, code', [
-    ({'contact_id': '1003', 'manual_present': 'on'}, 400, 'invalid_input'),                          # no date
-    ({'date_str': '2026-9-23', 'contact_id': '1003', 'manual_present': 'on'}, 400, 'invalid_input'),
-    ({'date_str': D, 'manual_present': 'on'}, 400, 'invalid_input'),                                # no kid
-    ({'date_str': D, 'contact_id': 'abc', 'manual_present': 'on'}, 400, 'invalid_input'),
-    ({'date_str': D, 'contact_id': '-1', 'manual_present': 'on'}, 400, 'invalid_input'),
-    ({'date_str': '2026-09-22', 'contact_id': '1003', 'manual_present': 'on'}, 400, 'invalid_input'),  # no meeting
-    ({'date_str': D, 'contact_id': '9999', 'manual_present': 'on'}, 404, 'not_found'),
-])
-def test_submit_checkin_rejects_bad_input(client, seeded, form, status, code):
-    resp = client.post('/submit_checkin', data={'team': 'Blue', **form})
-    assert resp.status_code == status
-    body = resp.get_json()
-    assert body['ok'] is False and body['error'] == code and body['message']
-    assert resp.headers['Cache-Control'] == 'no-store'
-    assert seeded.execute('SELECT COUNT(*) AS n FROM attendance').fetchone()['n'] == 0
-
-
-def test_edit_attendance_sets_flags_exactly(client, night):
-    resp = client.post('/edit_attendance', data={'date_str': D, 'team_name': 'Red', 'contact_id': '1001',
-                                                 'has_book': 'on', 'did_homework': 'on'})
-    assert resp.status_code == 200 and resp.get_json()['ok'] is True
-    assert _loc(resp) == f'/attendance/{D}/team/Red/kid/1001'
+def test_values_are_absolute_so_retries_are_safe(client, night):
+    for _ in range(2):                                           # a retried post can't flip anything back
+        _ok_row(_set(client, 1001, has_bible=False, has_book=True, did_homework=True))
     row = _att(night, 1001)
     assert _flags(row) == {'has_bible': False, 'wearing_shirt': False, 'has_book': True,
                            'did_homework': True, 'has_dues': False}
     assert row['mp_checked_in'] and not row['manual_present']
 
 
-def test_edit_attendance_ignores_manual_present_without_can_mark_present(client, night):
-    """The MP-checked-in form has no Present toggle; a stray manual_present is ignored."""
-    client.post('/edit_attendance', data={'date_str': D, 'team_name': 'Red', 'contact_id': '1001',
-                                          'manual_present': 'on', 'has_bible': 'on'})
-    row = _att(night, 1001)
-    assert not row['manual_present'] and row['has_bible']
-
-
-def test_edit_attendance_mark_present_and_items(client, seeded):
-    resp = client.post('/edit_attendance', data={'date_str': D, 'team_name': 'Blue', 'contact_id': '1003',
-                                                 'can_mark_present': '1', 'manual_present': 'on',
-                                                 'wearing_shirt': 'on'})
-    assert resp.status_code == 200 and resp.get_json()['ok'] is True
-    row = _att(seeded, 1003)
-    assert row['manual_present'] and row['present'] and row['wearing_shirt']
-
-
-def test_edit_attendance_unmarking_manual_present_clears_items(client, seeded):
+def test_undo_mark_present_clears_items(client, seeded):
     add_attendance(seeded, 1002, D_0923, manual_present=True, has_bible=True, has_dues=True)
     seeded.execute("UPDATE attendance SET manual_present_by = 'Leader Lee', manual_present_at = now() "
                    "WHERE contact_id = 1002")
-    resp = client.post('/edit_attendance', data={'date_str': D, 'team_name': 'Red', 'contact_id': '1002',
-                                                 'can_mark_present': '1', 'has_bible': 'on'})
-    assert resp.status_code == 200 and resp.get_json()['ok'] is True
-    row = _att(seeded, 1002)
-    assert not row['manual_present'] and not row['present']
-    assert not any(_flags(row).values())
-    assert row['manual_present_by'] is None and row['manual_present_at'] is None
+    row = _ok_row(_set(client, 1002, manual_present=False))
+    assert row['present'] is False and row['source'] is None and row['present_label'] == 'Not checked in'
+    assert not any(row[f] for f in FLAGS)
+    db = _att(seeded, 1002)
+    assert not db['manual_present'] and not db['present']
+    assert not any(_flags(db).values())
+    assert db['manual_present_by'] is None and db['manual_present_at'] is None
     body = _html(client.get(f'/attendance/{D}/team/Red?show=all'))
     assert 'Bo Brandt' in _groups(body)[1]
 
 
-def test_edit_attendance_items_for_absent_kid_is_409(client, seeded):
-    add_attendance(seeded, 1002, D_0923)
-    resp = client.post('/edit_attendance', data={'date_str': D, 'team_name': 'Red', 'contact_id': '1002',
-                                                 'has_dues': 'on'})
+def test_undo_is_refused_for_a_kiosk_check_in(client, night):
+    resp = _set(client, 1001, manual_present=False)
     assert resp.status_code == 409
-    assert resp.get_json()['error'] == 'not_present'
+    body = resp.get_json()
+    assert body['ok'] is False and body['error'] == 'mp_checked_in' and body['message']
+    row = _att(night, 1001)
+    assert row['present'] and row['has_bible']
+
+
+def test_legacy_item_without_present_can_be_cleared(client, seeded):
+    """Old imported rows can carry an item without Present: it can be turned off (or re-sent), not newly set."""
+    add_attendance(seeded, 1002, D_0923, has_dues=True)
+    body = _html(client.get(f'/attendance/{D}/team/Red/kid/1002'))
+    assert _chip(body, 'has_dues') == ('true', False)
+    assert _chip(body, 'has_bible') == ('false', True)
+    _ok_row(_set(client, 1002, has_dues=True))                   # not newly set: allowed
+    _ok_row(_set(client, 1002, has_dues=False))
     assert not _att(seeded, 1002)['has_dues']
+    assert _set(client, 1002, has_dues=True).status_code == 409
 
 
-def test_edit_attendance_missing_team_name_redirects_to_unassigned(client, night):
-    resp = client.post('/edit_attendance', data={'date_str': D, 'contact_id': '1007', 'has_bible': 'on'})
-    assert _loc(resp) == f'/attendance/{D}/team/Unassigned/kid/1007'
+def test_mark_present_for_unassigned_kid_keeps_no_team(client, seeded):
+    _ok_row(_set(client, 1007, manual_present=True))
+    assert _att(seeded, 1007)['team'] is None
+
+
+@pytest.mark.parametrize('kwargs', [
+    {'data': {'date_str': D, 'contact_id': '1003', 'manual_present': 'on'}},     # the old form post
+    {'data': 'not json', 'content_type': 'application/json'},
+    {'json': ['manual_present']},
+    {'json': {'manual_present': True}},                          # not wrapped in "set"
+    {'json': {'set': {}}},
+    {'json': {'set': 'manual_present'}},
+    {'json': {'set': {'present': True}}},                        # derived, not writable
+    {'json': {'set': {'mp_checked_in': True}}},                  # only the kiosk sets this
+    {'json': {'set': {'manual_present': True, 'team': 'Red'}}},
+    {'json': {'set': {'manual_present': 'on'}}},
+    {'json': {'set': {'manual_present': 1}}},
+    {'json': {'set': {'has_bible': None}}},
+])
+def test_api_attendance_rejects_bad_body(client, seeded, kwargs):
+    resp = client.post(f'/api/attendance/{D}/1003', **kwargs)
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body['ok'] is False and body['error'] == 'invalid_input' and body['message']
+    assert resp.headers['Cache-Control'] == 'no-store'
+    assert _n_attendance(seeded) == 0
+
+
+@pytest.mark.parametrize('path', [
+    '/api/attendance/2026-9-23/1003',
+    '/api/attendance/garbage/1003',
+    '/api/attendance/2026-09-22/1003',          # a valid date, not a meeting
+    '/api/attendance/2027-01-06/1003',          # future and not a meeting
+    f'/api/attendance/{D}/9999',                # unknown kid
+    f'/api/attendance/{D}/abc',
+    f'/api/attendance/{D}/-1',
+])
+def test_api_attendance_unknown_date_or_kid_is_404(client, seeded, path):
+    resp = client.post(path, json={'set': {'manual_present': True}})
+    assert resp.status_code == 404
+    body = resp.get_json()
+    assert body['ok'] is False and body['error'] == 'not_found' and body['message']
+    assert resp.headers['Cache-Control'] == 'no-store'
+    assert _n_attendance(seeded) == 0
+
+
+def test_api_attendance_answers_json_without_the_fetch_header(client, seeded):
+    resp = client.post(f'/api/attendance/{D}/1003', json={'set': {'has_bible': True}},
+                       headers={'X-Requested-With': '', 'Accept': 'text/html'})
+    assert resp.status_code == 409 and resp.mimetype == 'application/json'
+    assert resp.get_json()['error'] == 'not_present'
+
+
+@pytest.mark.parametrize('method, path', [
+    ('get', f'/attendance/{D}/team/Red/checkin/1003'),
+    ('post', '/submit_checkin'),
+    ('post', '/edit_attendance'),
+])
+def test_old_checkin_form_routes_are_gone(client, seeded, method, path):
+    form = {'date_str': D, 'contact_id': '1003', 'team': 'Blue', 'manual_present': 'on'}
+    resp = client.get(path) if method == 'get' else client.post(path, data=form)
+    assert resp.status_code == 404
+    assert _n_attendance(seeded) == 0
 
 
 # =============================================================================
@@ -607,25 +638,30 @@ def test_edit_attendance_missing_team_name_redirects_to_unassigned(client, night
 
 ENTRY = object()   # replaced by a future-dated completed_sections id
 
-FUTURE_WRITES = [
-    ('/submit_checkin', {'date_str': FUTURE, 'contact_id': '1003', 'team': 'Blue', 'manual_present': 'on',
-                         'has_bible': 'on'}),
-    ('/submit_checkin', {'date_str': '2027-01-06', 'contact_id': '1003', 'team': 'Blue',
-                         'manual_present': 'on'}),     # future and not a meeting: still future_date
-    ('/edit_attendance', {'date_str': FUTURE, 'contact_id': '1003', 'team_name': 'Blue',
-                          'can_mark_present': '1', 'manual_present': 'on'}),
+FUTURE_WRITES = [   # (path, JSON body) for /api/*, (path, form) for the form posts
+    (f'/api/attendance/{FUTURE}/1003', {'set': {'manual_present': True}}),
+    (f'/api/attendance/{FUTURE}/1003', {'set': {'manual_present': True, 'has_bible': True}}),
+    (f'/api/sections/{FUTURE}/1003', {'section': '1.3', 'field': 'gold_credit', 'value': True}),
     ('/submit_section', {'date_str': FUTURE, 'contact_id': '1003', 'team': 'Blue', 'section': '1.3',
                          'section_complete': 'on'}),
+    ('/submit_section', {'date_str': '2027-01-06', 'contact_id': '1003', 'team': 'Blue', 'section': '1.3',
+                         'section_complete': 'on'}),     # future and not a meeting: still future_date
     ('/edit_section', {'date_str': FUTURE, 'entry_id': ENTRY, 'team_name': 'Blue', 'gold_credit': 'on'}),
     ('/edit_progress_section', {'entry_id': ENTRY, 'gold_credit': 'on'}),
 ]
 
 
-@pytest.mark.parametrize('path, form', FUTURE_WRITES)
-def test_future_date_writes_are_rejected(client, seeded, path, form):
+def _post(client, path, payload):
+    """JSON for the /api/* endpoints, a form post for the rest."""
+    return client.post(path, json=payload) if path.startswith('/api/') else client.post(path, data=payload)
+
+
+@pytest.mark.parametrize('path, payload', FUTURE_WRITES)
+def test_future_date_writes_are_rejected(client, seeded, path, payload):
     entry_id = add_section(seeded, 1003, D_0930, '1.3', silver=True)   # e.g. an import typo
-    form = {k: (str(entry_id) if v is ENTRY else v) for k, v in form.items()}
-    resp = client.post(path, data=form)
+    if not path.startswith('/api/'):
+        payload = {k: (str(entry_id) if v is ENTRY else v) for k, v in payload.items()}
+    resp = _post(client, path, payload)
     assert resp.status_code == 422
     body = resp.get_json()
     assert body == {'ok': False, 'error': 'future_date', 'message': body['message']}
@@ -649,10 +685,9 @@ def test_record_section_form_future_date_is_read_only(client, seeded):
 
 
 def test_past_meeting_dates_are_writable(client, seeded):
-    resp = client.post('/submit_checkin', data={'date_str': '2026-09-16', 'contact_id': '1003', 'team': 'Blue',
-                                                'manual_present': 'on'})
-    assert resp.status_code == 200 and resp.get_json()['ok'] is True
+    _ok_row(_set(client, 1003, d='2026-09-16', manual_present=True))
     assert _att(seeded, 1003, D_0916)['present']
+    assert _att(seeded, 1003) is None                                  # tonight untouched
 
 
 # =============================================================================
@@ -957,8 +992,10 @@ def _db_down(*_args, **_kwargs):
 
 
 @pytest.mark.parametrize('path, target', [
-    ('/', 'get_schedule'),
-    ('/attendance', 'get_schedule'),
+    ('/?all=1', 'get_schedule'),
+    ('/attendance?all=1', 'get_schedule'),
+    ('/', 'get_schedule_day'),                      # the club-night redirect reads the schedule too
+    ('/attendance', 'get_schedule_day'),
     (f'/home/{D}', 'get_schedule_day'),
     (f'/attendance/{D}/team/Red', 'get_schedule_day'),
     (f'/home/{D}/team/Red/record_section', 'get_schedule_day'),
@@ -980,8 +1017,10 @@ def test_db_down_on_get_returns_json_to_fetch(client, seeded, monkeypatch):
 
 
 @pytest.mark.parametrize('path, target, form', [
-    ('/submit_checkin', 'set_attendance', {'date_str': D, 'contact_id': '1003', 'manual_present': 'on'}),
-    ('/edit_attendance', 'set_attendance', {'date_str': D, 'contact_id': '1003', 'has_bible': 'on'}),
+    (f'/api/attendance/{D}/1003', 'set_attendance', {'set': {'manual_present': True}}),
+    (f'/api/attendance/{D}/1003', 'get_schedule_day', {'set': {'has_bible': True}}),
+    (f'/api/sections/{D}/1001', 'set_section_credit', {'section': '1.2', 'field': 'section_complete',
+                                                      'value': True}),
     ('/submit_section', 'upsert_completed_section', {'date_str': D, 'contact_id': '1001', 'section': '1.2',
                                                      'section_complete': 'on'}),
     ('/edit_section', 'get_section_entry', {'date_str': D, 'entry_id': '1', 'gold_credit': 'on'}),
@@ -989,7 +1028,7 @@ def test_db_down_on_get_returns_json_to_fetch(client, seeded, monkeypatch):
 ])
 def test_db_down_on_post_returns_503_json(client, seeded, monkeypatch, path, target, form):
     monkeypatch.setattr(data, target, _db_down)
-    resp = client.post(path, data=form)
+    resp = _post(client, path, form)
     assert resp.status_code == 503
     body = resp.get_json()
     assert body['ok'] is False and body['error'] == 'db_unavailable'
@@ -1002,14 +1041,14 @@ def test_db_down_on_post_returns_503_json(client, seeded, monkeypatch, path, tar
 # =============================================================================
 
 def test_qa_ribbon_shows_configured_override(client, seeded):
-    for path in ('/', f'/home/{D}/team/Red/record_section'):     # base and fullscreen layouts
+    for path in ('/?all=1', f'/home/{D}/team/Red/record_section'):     # base and fullscreen layouts
         body = _html(client.get(path))
         assert 'class="qa-ribbon"' in body
         assert 'Testing as September 23, 2026' in body
 
 
 def test_qa_today_param_sets_cookie_and_moves_today(client, seeded):
-    resp = client.get('/?today=2026-09-30')
+    resp = client.get('/?all=1&today=2026-09-30')
     assert resp.status_code == 200
     set_cookie = resp.headers['Set-Cookie']
     assert 'tnt_today=2026-09-30' in set_cookie and 'HttpOnly' in set_cookie
@@ -1018,12 +1057,20 @@ def test_qa_today_param_sets_cookie_and_moves_today(client, seeded):
     assert re.search(r'id="current-date"\s+href="/home/2026-09-30"', body)
     assert 'TODAY' in _schedule_item(body, '/home/2026-09-30')
 
-    body = _html(client.get('/attendance'))                         # the cookie carries it
+    body = _html(client.get('/attendance?all=1'))                   # the cookie carries it
     assert 'Testing as September 30, 2026' in body
-    resp = client.post('/submit_checkin', data={'date_str': FUTURE, 'contact_id': '1003', 'team': 'Blue',
-                                                'manual_present': 'on'})
-    assert resp.status_code == 200 and resp.get_json()['ok'] is True                                   # 9/30 is "today" now
+    resp = client.get('/attendance')                                # 9/30 is tonight now
+    assert resp.status_code == 302 and _loc(resp) == '/attendance/2026-09-30'
+    _ok_row(_set(client, 1003, d=FUTURE, manual_present=True))      # and writable
     assert _att(seeded, 1003, D_0930)['present']
+
+
+def test_qa_today_link_opens_that_club_night(client, seeded):
+    """A QA link to the bare tab still sets the cookie on the club-night redirect."""
+    resp = client.get('/?today=2026-09-16')
+    assert resp.status_code == 302 and _loc(resp) == '/home/2026-09-16'
+    assert 'tnt_today=2026-09-16' in resp.headers['Set-Cookie']
+    assert 'Testing as September 16, 2026' in _html(client.get(resp.headers['Location']))
 
 
 def test_qa_today_between_meetings_shows_next(client, seeded):
@@ -1033,17 +1080,18 @@ def test_qa_today_between_meetings_shows_next(client, seeded):
 
 
 def test_qa_today_clear_removes_cookie(client, seeded):
-    client.get('/?today=2026-09-30')
-    resp = client.get('/?today=clear')
+    client.get('/?all=1&today=2026-09-30')
+    resp = client.get('/?all=1&today=clear')
     assert 'tnt_today=;' in resp.headers['Set-Cookie']
     assert client.get_cookie('tnt_today') is None
     assert 'Testing as September 23, 2026' in _html(resp)
-    resp = client.post('/submit_checkin', data={'date_str': FUTURE, 'contact_id': '1003', 'manual_present': 'on'})
+    resp = _set(client, 1003, d=FUTURE, manual_present=True)
     assert resp.status_code == 422
+    assert resp.get_json()['error'] == 'future_date'
 
 
 def test_qa_today_ignores_garbage(client, seeded):
-    resp = client.get('/?today=2026-13-01')
+    resp = client.get('/?all=1&today=2026-13-01')
     assert 'tnt_today' not in resp.headers.get('Set-Cookie', '')
     assert 'Testing as September 23, 2026' in _html(resp)
 
@@ -1062,7 +1110,7 @@ def locked_client(seeded, fake_mp):
 
 
 def test_qa_today_ignored_when_override_disallowed(locked_client, seeded):
-    resp = locked_client.get('/?today=2099-01-07')
+    resp = locked_client.get('/?all=1&today=2099-01-07')
     assert resp.status_code == 200
     assert 'tnt_today' not in resp.headers.get('Set-Cookie', '')
     body = _html(resp)
@@ -1070,17 +1118,16 @@ def test_qa_today_ignored_when_override_disallowed(locked_client, seeded):
     assert 'TODAY' not in _schedule_item(body, '/home/2099-01-07')
 
     locked_client.set_cookie('tnt_today', '2099-01-07')
-    resp = locked_client.post('/submit_checkin', data={'date_str': '2099-01-07', 'contact_id': '1003',
-                                                       'manual_present': 'on'})
+    resp = _set(locked_client, 1003, d='2099-01-07', manual_present=True)
     assert resp.status_code == 422
     assert resp.get_json()['error'] == 'future_date'
-    assert 'class="qa-ribbon"' not in _html(locked_client.get('/attendance'))
+    assert 'class="qa-ribbon"' not in _html(locked_client.get('/attendance?all=1'))
 
 
 def test_qa_ribbon_hidden_when_override_disallowed(seeded, fake_mp):
     from tnt import create_app
     app = create_app({'TESTING': True, 'ALLOW_DATE_OVERRIDE': False, 'TNT_DATE_OVERRIDE': D})
-    assert 'class="qa-ribbon"' not in _html(app.test_client().get('/'))
+    assert 'class="qa-ribbon"' not in _html(app.test_client().get('/?all=1'))
 
 
 # =============================================================================

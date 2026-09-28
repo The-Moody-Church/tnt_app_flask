@@ -1,12 +1,12 @@
 """Helpers shared by the route modules."""
 import logging
 
-from flask import abort, redirect, request, url_for
+from flask import abort, current_app, redirect, request, url_for
 
 from models import data
 from models.checkins import live_sync as _live_sync
 from models.errors import FutureDate, InvalidInput
-from models.fields import UNASSIGNED, canonical_team, team_label
+from models.fields import TEAMS, UNASSIGNED, canonical_team, team_label
 from models.sync_state import SyncStatus
 from models.utils import get_today, parse_url_date
 
@@ -31,6 +31,45 @@ def resolve_team(team_name, *, allow_unassigned, on_fail):
     if team is None and not allow_unassigned:
         abort(redirect(on_fail))
     return team
+
+
+TEAM_COOKIE = 'tnt_team'
+TEAM_COOKIE_MAX_AGE = 180 * 86400
+
+
+def last_team():
+    """The team this device last looked at (validated; never Unassigned)."""
+    value = request.cookies.get(TEAM_COOKIE)
+    return value if value in TEAMS else None
+
+
+def remember_team(resp, team):
+    if team in TEAMS:
+        resp.set_cookie(TEAM_COOKIE, team, max_age=TEAM_COOKIE_MAX_AGE, httponly=True, samesite='Lax',
+                        secure=current_app.config['SESSION_COOKIE_SECURE'])
+    return resp
+
+
+def tonight_redirect(tab):
+    """On a club night, the Home/Attendance tabs open straight to tonight's team (or tonight's teams).
+
+    tab: 'home' | 'attendance'. ?all=1 shows the date list instead. Returns a response or None.
+    """
+    if request.args.get('all'):
+        return None
+    d = get_today()
+    day = data.get_schedule_day(d)
+    if day is None or day['no_club']:
+        return None
+    team = last_team()
+    if team:
+        endpoint = 'home_team_details' if tab == 'home' else 'team_attendance_details'
+        target = url_for(endpoint, date_str=d.isoformat(), team_name=team)
+    else:
+        target = url_for('home_details' if tab == 'home' else 'attendance_details', date_str=d.isoformat())
+    resp = redirect(target)
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 def team_url_name(team):
@@ -86,4 +125,5 @@ def form_date(name='date_str'):
 
 
 __all__ = ['resolve_day', 'resolve_team', 'team_url_name', 'live_sync', 'show_all_requested',
-           'credit_states', 'require_writable', 'form_int', 'form_date', 'UNASSIGNED', 'get_today']
+           'credit_states', 'require_writable', 'form_int', 'form_date', 'UNASSIGNED', 'get_today',
+           'last_team', 'remember_team', 'tonight_redirect']

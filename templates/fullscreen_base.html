@@ -16,13 +16,13 @@
     {% if current_user %}<meta name="csrf-token" content="{{ csrf_token() }}">{% endif %}
     {% block extra_css %}{% endblock %}
 </head>
-<body class="fullscreen-body">
+<body class="fullscreen-body"{% block body_attrs %}{% endblock %}>
     {% if show_header %}
     <header class="mobile-header">
         {% if back_url %}
-        <a class="back-btn" href="{{ back_url }}">←</a>
+        <a class="back-btn" href="{{ back_url }}" aria-label="Back">←</a>
         {% else %}
-        <button type="button" class="back-btn" data-action="back">←</button>
+        <button type="button" class="back-btn" data-action="back" aria-label="Back">←</button>
         {% endif %}
         <h1 class="header-title">{{ page_title or 'TNT Tracker' }}</h1>
         <div class="header-action">{% block header_action %}{% if current_user %}<a class="account-avatar" href="{{ url_for('auth.account') }}" aria-label="Account: {{ current_user.name }}">{{ current_user.initials }}</a>{% endif %}{% endblock %}</div>

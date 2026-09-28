@@ -1,15 +1,15 @@
 from collections import OrderedDict
 
-from flask import abort, redirect, render_template, request, url_for
+from flask import abort, make_response, redirect, render_template, request, url_for
 
 from models import data
-from models.fields import SECTION_CREDIT_COLUMNS, TEAM_STAT_FIELDS, bools_from_form, team_label
-from models.utils import find_closest_date
-from routes.auth import current_user
 from models.errors import InvalidInput
+from models.fields import SECTION_CREDIT_COLUMNS, SECTION_CREDITS, TEAM_STAT_FIELDS, bools_from_form, team_label
+from models.utils import find_closest_date, get_today
+from routes._common import (credit_states, form_date, form_int, live_sync, remember_team, require_writable,
+                            resolve_day, resolve_team, show_all_requested, tonight_redirect)
+from routes.auth import current_user
 from routes.responses import saved
-from routes._common import (credit_states, form_date, form_int, live_sync, require_writable, resolve_day,
-                            resolve_team, show_all_requested)
 
 
 def register_home_routes(app):
@@ -17,6 +17,9 @@ def register_home_routes(app):
 
     @app.route('/')
     def home():
+        redirect_tonight = tonight_redirect('home')
+        if redirect_tonight:
+            return redirect_tonight
         schedule_data = data.get_schedule()
         return render_template('home.html', schedule_data=schedule_data,
                                closest_date=find_closest_date(schedule_data))
@@ -39,9 +42,12 @@ def register_home_routes(app):
             kid = kids_sections.setdefault(row['contact_id'], {'contact_id': row['contact_id'],
                                                                'name': row['name'], 'sections': []})
             kid['sections'].append(row['section'])
-        return render_template('home_team_details.html', day_data=day, date_str=date_str, team_name=team,
-                               team_data=totals[0] if totals else None, stat_fields=TEAM_STAT_FIELDS,
-                               kids_sections=list(kids_sections.values()), sync=sync)
+        resp = make_response(render_template(
+            'home_team_details.html', day_data=day, date_str=date_str, team_name=team,
+            team_data=totals[0] if totals else None, stat_fields=TEAM_STAT_FIELDS,
+            kids_sections=list(kids_sections.values()), sync=sync, teams=data.get_teams(),
+            is_tonight=d == get_today()))
+        return remember_team(resp, team)
 
     @app.route('/home/<date_str>/team/<team_name>/record_section')
     def record_section_kid_picker(date_str, team_name):
@@ -61,13 +67,20 @@ def register_home_routes(app):
         team = resolve_team(team_name, allow_unassigned=True, on_fail=url_for('home_details', date_str=date_str))
         kid = data.get_kid(contact_id=contact_id) or abort(404)
         history = data.get_section_history(contact_id=contact_id)
+        book = data.get_book_sections()
         sections = []
-        for sec in data.get_book_sections():
+        for sec in book:
             h = history.get(sec, {})
             sections.append({'section': sec, 'main_date': h.get('main_date'),
-                             'silver': bool(h.get('silver_date')), 'gold': bool(h.get('gold_date'))})
+                             'silver': bool(h.get('silver_date')), 'gold': bool(h.get('gold_date')),
+                             'pinned': sec in day['sections']})
+        # Tonight's scheduled section(s) on top, with one-tap Main / Silver / Gold.
+        pinned = [{'section': sec, 'states': credit_states(history, sec, d)}
+                  for sec in day['sections'] if sec in book]
         return render_template('record_section_list.html', day_data=day, date_str=date_str,
-                               team_name=team_label(team), kid=kid, sections=sections)
+                               team_name=team_label(team), kid=kid, sections=sections, pinned=pinned,
+                               credits=SECTION_CREDITS, writable=data.is_writable_date(d),
+                               is_tonight=d == get_today())
 
     @app.route('/home/<date_str>/team/<team_name>/record_section/kid/<int:contact_id>/section/<section>')
     def record_section_form(date_str, team_name, contact_id, section):

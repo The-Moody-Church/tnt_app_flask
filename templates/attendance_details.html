@@ -1,7 +1,7 @@
 {% from "_macros.html" import sync_note %}
 {% set show_header = true %}
 {% set page_title = day_data.meeting_date|date_display %}
-{% set back_url = url_for('attendance') %}
+{% set back_url = url_for('attendance', all=1) %}
 {% extends "base.html" %}
 
 {% block title %}TNT Reading Teams Tracker - {{ day_data.meeting_date|date_display }}{% endblock %}
