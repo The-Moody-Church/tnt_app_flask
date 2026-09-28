@@ -11,7 +11,8 @@
         <div class="team-badge {{ team_name|lower }}">{{ team_name|team_title }}</div>
     </div>
 
-    <form id="checkinForm" method="POST" action="{{ url_for('submit_checkin') }}">
+    <form id="checkinForm" data-json-form data-what="the check-in" method="POST" action="{{ url_for('submit_checkin') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="team" value="{{ team_name }}">
         <input type="hidden" name="date_str" value="{{ date_str }}">
         <input type="hidden" name="contact_id" value="{{ kid.contact_id }}">
@@ -44,33 +45,11 @@
 
         <div class="form-buttons">
             <button type="submit" class="submit-button">Submit</button>
-            <button type="button" class="cancel-button" onclick="window.history.back()">Cancel</button>
+            <button type="button" class="cancel-button" data-action="back">Cancel</button>
         </div>
         {% else %}
         <p class="empty-note">This date hasn’t happened yet, so nothing can be recorded.</p>
         {% endif %}
     </form>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-(function () {
-    var form = document.getElementById('checkinForm');
-    form.addEventListener('submit', function (event) {
-        event.preventDefault();
-        fetch(form.action, { method: 'POST', body: new FormData(form), redirect: 'follow' })
-            .then(function (response) {
-                if (response.ok) {
-                    window.location.href = response.url;
-                } else {
-                    response.json().then(function (b) { alert(b.message || 'Not saved'); },
-                                         function () { alert('Not saved'); });
-                    form.querySelector('button[type="submit"]').classList.remove('loading');
-                }
-            })
-            .catch(function () { alert('Couldn’t reach the server — nothing was saved.'); });
-    });
-})();
-</script>
 {% endblock %}

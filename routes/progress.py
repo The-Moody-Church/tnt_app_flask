@@ -3,6 +3,8 @@ from flask import abort, redirect, render_template, request, url_for
 from models import data
 from models.fields import SECTION_CREDIT_COLUMNS, SECTION_CREDITS, bools_from_form
 from routes._common import form_int, require_writable
+from routes.auth import current_user
+from routes.responses import saved
 
 
 def register_progress_routes(app):
@@ -46,5 +48,7 @@ def register_progress_routes(app):
         entry = data.get_section_entry(form_int('entry_id')) or abort(404)
         require_writable(entry['meeting_date'])
         data.update_completed_section(entry_id=entry['id'],
-                                      credits=bools_from_form(request.form, SECTION_CREDIT_COLUMNS))
-        return redirect(url_for('student_section_details', contact_id=entry['contact_id'], entry_id=entry['id']))
+                                      credits=bools_from_form(request.form, SECTION_CREDIT_COLUMNS),
+                                      by=current_user())
+        return saved(url_for('student_section_details', contact_id=entry['contact_id'],
+                             entry_id=entry['id']))

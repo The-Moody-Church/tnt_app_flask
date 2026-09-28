@@ -1018,3 +1018,73 @@ a.back-btn { display: inline-flex; align-items: center; }
     background: #fff3cd; color: #7a5b00; font-size: 0.8em; text-align: center; padding: 4px;
     margin: -4px 0 8px;
 }
+
+/* ------------------------------------------------------------------------- */
+/* Account avatar (header) */
+.account-avatar {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 50%; margin: 4px;
+    background: rgba(255,255,255,0.18); border: 2px solid rgba(255,255,255,0.85);
+    color: white; font-weight: 700; font-size: 0.85em; text-decoration: none;
+}
+.account-avatar--large {
+    width: 64px; height: 64px; font-size: 1.4em; margin: 0 auto var(--spacing-sm);
+    background: var(--color-primary); border-color: var(--color-primary);
+}
+.account-actions form { margin: 0; }
+.account-row {
+    width: calc(100% - 2 * var(--spacing-sm)); min-height: 52px; font: inherit; text-align: left;
+    color: var(--color-gray-dark); cursor: pointer;
+}
+.account-signout { color: #b3261e; }
+
+/* Sign-in pages */
+.auth-body { background: var(--color-gray-light); min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; }
+.auth-card {
+    width: 100%; max-width: 420px; margin: max(40px, env(safe-area-inset-top)) var(--spacing-md) var(--spacing-xl);
+    padding: var(--spacing-xl) var(--spacing-lg); background: white; border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-md); text-align: center;
+}
+.auth-logo { border-radius: 16px; margin-bottom: var(--spacing-sm); }
+.auth-title { color: var(--color-primary); font-size: 1.4em; margin-bottom: var(--spacing-md); }
+.auth-lead { color: var(--color-text); margin-bottom: var(--spacing-lg); line-height: 1.45; }
+.auth-error {
+    background: #fdecea; color: #b3261e; border-radius: var(--radius-lg); padding: var(--spacing-sm) var(--spacing-md);
+    margin-bottom: var(--spacing-md); text-align: left; line-height: 1.4;
+}
+.auth-button {
+    display: flex; align-items: center; justify-content: center; min-height: 52px; width: 100%;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light)); color: white;
+    border-radius: var(--radius-lg); font-weight: 600; font-size: 1.05em; text-decoration: none;
+    margin-bottom: var(--spacing-md);
+}
+.auth-link-button {
+    min-height: 44px; background: none; border: none; color: var(--color-primary); font: inherit;
+    text-decoration: underline; cursor: pointer;
+}
+.auth-help { text-align: left; color: var(--color-text-muted); font-size: 0.9em; margin-top: var(--spacing-md); }
+.auth-help summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--color-primary); }
+.auth-help p { line-height: 1.45; }
+
+/* Toasts and the expired-session banner */
+.toast-region {
+    position: fixed; left: 0; right: 0; bottom: calc(84px + env(safe-area-inset-bottom)); z-index: 1100;
+    display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 var(--spacing-md);
+    pointer-events: none;
+}
+.fullscreen-body .toast-region { bottom: calc(24px + env(safe-area-inset-bottom)); }
+.toast {
+    pointer-events: auto; max-width: 480px; width: 100%; display: flex; align-items: center; gap: 12px;
+    justify-content: space-between; background: #2c2c2c; color: white; border-radius: var(--radius-lg);
+    padding: 12px 16px; box-shadow: var(--shadow-lg); font-size: 0.95em;
+}
+.toast--error { background: #b3261e; }
+.toast__action {
+    min-height: 36px; padding: 0 12px; border-radius: var(--radius-md); border: 1px solid rgba(255,255,255,0.7);
+    background: transparent; color: white; font: inherit; font-weight: 600;
+}
+.session-banner {
+    position: fixed; top: 56px; left: 0; right: 0; z-index: 1101; padding: 12px var(--spacing-md);
+    background: #fff3cd; color: #7a5b00; border-bottom: 1px solid #f9d84a; text-align: center;
+}
+.session-banner a { color: var(--color-primary); font-weight: 700; }

@@ -206,5 +206,5 @@ def test_section_for_unassigned_kid_returns_to_the_unassigned_picker(client, see
     add_attendance(seeded, 1007, TODAY, team=None, mp_checked_in=True)
     resp = client.post('/submit_section', data={'date_str': TODAY.isoformat(), 'team': 'Unassigned',
                                                 'contact_id': '1007', 'section': '1.2', 'section_complete': 'on'})
-    assert resp.status_code == 302
-    assert resp.location.endswith('/home/2026-09-23/team/Unassigned/record_section')
+    assert resp.status_code == 200
+    assert resp.get_json()['redirect'].endswith('/home/2026-09-23/team/Unassigned/record_section')

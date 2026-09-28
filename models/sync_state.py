@@ -122,7 +122,7 @@ def memo_fresh(key):
     """The memoized SyncStatus if this process knows `key` is still fresh, else None."""
     with _memo_lock:
         hit = _memo.get(key)
-    if hit is None or time.monotonic() >= hit[0]:
+    if hit is None or time.time() >= hit[0]:
         return None
     return SyncStatus(key, 'fresh', hit[1])
 
@@ -131,7 +131,7 @@ def memo_set(key, fresh_for_seconds, synced_at=None):
     if fresh_for_seconds <= 0:
         return
     with _memo_lock:
-        _memo[key] = (time.monotonic() + fresh_for_seconds, synced_at)
+        _memo[key] = (time.time() + fresh_for_seconds, synced_at)
 
 
 def memo_clear():

@@ -1,0 +1,17 @@
+{% extends "auth_base.html" %}
+{% block title %}Not on the leaders list - TNT Tracker{% endblock %}
+{% block content %}
+<p class="auth-error" role="alert">You’re signed in to MinistryPlatform, but that login isn’t on the T&amp;T Leaders list.</p>
+<p class="auth-lead">This usually means you’re not listed as an active T&amp;T leader yet, or your login is attached to a
+   different (duplicate) contact record. Ask {{ help_contact }} to check.</p>
+{% if denied_user %}
+<p class="auth-help">Signed in as <strong>{{ denied_user.display_name }}</strong> (MP user {{ denied_user.user_id }},
+   contact {{ denied_user.contact_id }}) — share this with {{ help_contact }}.</p>
+{% endif %}
+<a class="auth-button" href="{{ url_for('auth.login_start') }}">Try again</a>
+<form method="post" action="{{ url_for('auth.logout') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="switch" value="1">
+    <button type="submit" class="auth-link-button">Use a different account</button>
+</form>
+{% endblock %}

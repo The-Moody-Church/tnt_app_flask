@@ -1,0 +1,25 @@
+{% extends "auth_base.html" %}
+{% block title %}Sign in - TNT Tracker{% endblock %}
+{% block content %}
+{% set messages = {
+    'state': 'Sign-in didn’t finish. Tap Sign in again. If this keeps happening on iPhone, open the site in Safari.',
+    'cancelled': 'Sign-in was cancelled.',
+    'expired': 'Sign-in took too long. Please try again.',
+    'verify': 'We couldn’t verify that sign-in. Please try again.',
+    'failed': 'Sign-in didn’t work. Please try again.',
+    'no_id_token': 'Sign-in didn’t work. Please try again.',
+    'mp_unavailable': 'MinistryPlatform isn’t responding, so we can’t confirm you’re a leader. Try again in a minute.',
+    'unavailable': 'Sign-in isn’t available on this preview deployment.',
+} %}
+{% if error %}
+<p class="auth-error" role="alert">{{ messages.get(error, messages['failed']) }}</p>
+{% endif %}
+<p class="auth-lead">Sign in with your MinistryPlatform account to record attendance and sections.</p>
+{% if login_available %}
+<a class="auth-button" href="{{ url_for('auth.login_start', next=next) }}">Sign in with MinistryPlatform</a>
+{% elif error != 'unavailable' %}
+<p class="auth-error" role="status">{{ messages['unavailable'] }}</p>
+{% endif %}
+<p class="auth-help"><strong>No MinistryPlatform login yet?</strong> Ask {{ help_contact }} to set one up for your
+   T&amp;T leader record. Please don’t create a new account yourself — it won’t be linked to the T&amp;T Leaders list.</p>
+{% endblock %}

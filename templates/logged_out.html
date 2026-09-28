@@ -1,0 +1,6 @@
+{% extends "auth_base.html" %}
+{% block title %}Signed out - TNT Tracker{% endblock %}
+{% block content %}
+<p class="auth-lead">You’re signed out.</p>
+<a class="auth-button" href="{{ url_for('auth.login') }}">Sign in again</a>
+{% endblock %}

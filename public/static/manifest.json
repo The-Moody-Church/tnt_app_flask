@@ -4,8 +4,8 @@
   "description": "Track reading teams and their progress",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#007bff",
+  "background_color": "#faf8f6",
+  "theme_color": "#72253D",
   "orientation": "portrait",
   "icons": [
     {
@@ -18,5 +18,7 @@
       "sizes": "512x512",
       "type": "image/png"
     }
-  ]
+  ],
+  "id": "/",
+  "scope": "/"
 }

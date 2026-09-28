@@ -11,8 +11,8 @@
     <p class="error-details">{{ error_details }}</p>
     {% endif %}
     <div class="error-actions">
-        <button type="button" onclick="window.location.reload()" class="btn btn-primary">Try Again</button>
-        <button onclick="window.history.back()" class="btn btn-secondary">Go Back</button>
+        <button type="button" data-action="reload" class="btn btn-primary">Try Again</button>
+        <button type="button" data-action="back" class="btn btn-secondary">Go Back</button>
     </div>
 </div>
 

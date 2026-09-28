@@ -41,7 +41,10 @@ Pretend it's club night: `TNT_DATE_OVERRIDE=2026-09-23` in `.env`, or `?today=20
   - `sync_state.py` — single-flight sync-on-read claims, per-request MP time budget, `mp_health` circuit breaker.
     There are no background threads (they're unreliable on serverless).
   - `fields.py` — column whitelists, labels, team parsing. `utils.py` — `get_today()`, date filters.
-- `routes/` — `home.py` (sections), `attendance.py`, `progress.py`, `_common.py` (shared helpers).
+- `routes/` — `home.py` (sections), `attendance.py`, `progress.py`, `api.py` (JSON endpoints),
+  `auth.py` (MP sign-in + login gate), `responses.py` (JSON contract), `_common.py` (shared helpers).
+- `models/access.py` — who may sign in (Group 1000 leaders + `ADMIN_USER_GROUP_IDS` user groups).
+- Static files live in `public/static/` (Vercel's CDN serves `public/`; Flask serves them locally at `/static`).
 - `migrations/NNNN_*.sql` + `scripts/migrate.py` (owner role, DIRECT url). Grants: `scripts/neon/grants.sql`.
 - `scripts/import_sheet.py` — one-time import of the legacy sheet export (dry run by default).
 - `scripts/mp_probe.py` — read-only check that the MP API client has the table permissions it needs.
@@ -60,6 +63,20 @@ Pretend it's club night: `TNT_DATE_OVERRIDE=2026-09-23` in `.env`, or `?today=20
   formulas exactly (including the "Total Points : 10375" string = points per kid × 1000). Don't "fix" them.
 - **Identity:** kids are keyed by MP `Contact_ID` everywhere (URLs, forms, rows). Never match on names.
 
+## Auth (routes/auth.py)
+
+- MP OIDC via Authlib. `sub` = `dp_Users.User_GUID`. MP's id_token may omit `nonce` (`MPCodeIDToken`);
+  PKCE is off unless `MP_OIDC_PKCE=1`. Logout sends `id_token_hint` (MP ignores the redirect without it).
+- **Only the OIDC callback writes `session["user"]`** (lesson of GHSA-pqxp-c5mr-5398). Never add an endpoint that
+  accepts identity fields. Sessions are bound to `APP_BASE_URL` (`session["aud"]`).
+- The gate (`auth_gate`) runs first: anonymous GET → `/login`, anonymous fetch/API POST → 401 JSON. CSRF is
+  checked *after* the login check (`WTF_CSRF_CHECK_DEFAULT=False`), so an expired session gets 401, not 400.
+- Membership is re-checked hourly on page loads (saves within 6 h of a check never wait on MP). MP outages keep
+  existing sessions working for the 35-day grace; sign-in itself always fails closed.
+- Every POST follows the JSON contract (`routes/responses.py`): `{"ok": true, "redirect"?}` or
+  `{"ok": false, "error", "message"}`. `public/static/app.js` `tnt.post()` is the only client for it; a failed save
+  must never look like success.
+
 ## MP facts
 
 - Groups: 697 = T&T kids (role 2 = kid; other roles are volunteers); 1000 = T&T Leaders (who may sign in).
@@ -75,7 +92,10 @@ Pretend it's club night: `TNT_DATE_OVERRIDE=2026-09-23` in `.env`, or `?today=20
 
 ## Testing
 
-- Tests run against real Postgres (fixtures in `tests/conftest.py`: `conn`, `seeded`, `client`, `fake_mp`, `app_ctx`).
+- Tests run against real Postgres (fixtures in `tests/conftest.py`: `conn`, `seeded`, `client` (signed-in leader),
+  `anon_client`, `fake_mp`, `app_ctx`; `login_session()` builds a session the way the callback would).
+- `client.post()` sends `X-Requested-With: fetch` like `tnt.post()`; pass `headers={'X-Requested-With': ''}` to
+  simulate a native HTML form post.
 - MP is always faked (`FakeMP`); `seeded` marks syncs fresh so routes don't call MP.
 - There is no fake data layer on purpose: the SQL must stay in step with what routes expect.
 

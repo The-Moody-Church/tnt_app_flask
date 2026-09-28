@@ -42,6 +42,21 @@ def _int_list(value):
     return tuple(ids)
 
 
+def _normalize_origin(value):
+    """'https://TNT.example.org:443/' -> 'https://tnt.example.org'. Rejects paths and queries."""
+    value = value.strip().rstrip('/')
+    if not value:
+        return ''
+    parts = urlsplit(value)
+    if parts.scheme not in ('http', 'https') or not parts.hostname or parts.path or parts.query or parts.fragment:
+        raise ValueError(f'APP_BASE_URL must be an origin like https://tnt.example.org, got {value!r}')
+    host = parts.hostname.lower()
+    port = parts.port
+    if port and not ((parts.scheme == 'https' and port == 443) or (parts.scheme == 'http' and port == 80)):
+        host = f'{host}:{port}'
+    return f'{parts.scheme}://{host}'
+
+
 def load_config(env=None):
     env = os.environ if env is None else env
     vercel_env = env.get('VERCEL_ENV') or None
@@ -51,13 +66,15 @@ def load_config(env=None):
     secret_key = env.get('SECRET_KEY', '')
     if production and len(secret_key) < 32:
         raise RuntimeError('SECRET_KEY (32+ chars) is required in production')
+    if deployed and secret_key and len(secret_key) < 32:
+        raise RuntimeError('SECRET_KEY must be 32+ chars on deployed environments')
     has_stable_secret = bool(secret_key)
     if not secret_key:
         # Local dev only: sessions reset on restart. On serverless previews each instance would get a
         # different key, which breaks sessions and OAuth state, so login is disabled there (below).
         secret_key = secrets.token_urlsafe(48)
 
-    app_base_url = (env.get('APP_BASE_URL') or '').rstrip('/')
+    app_base_url = _normalize_origin(env.get('APP_BASE_URL') or '')
     if production and not app_base_url:
         raise RuntimeError('APP_BASE_URL is required in production')
     if not app_base_url and not deployed:
@@ -112,9 +129,9 @@ def load_config(env=None):
         'SESSION_COOKIE_HTTPONLY': True,
         'SESSION_COOKIE_SAMESITE': 'Lax',  # Strict breaks the redirect back from MP
         'PERMANENT_SESSION_LIFETIME': timedelta(days=_int(env.get('SESSION_LIFETIME_DAYS'), 35)),
-        'SESSION_REFRESH_EACH_REQUEST': True,
+        'SESSION_REFRESH_EACH_REQUEST': False,  # the hourly re-check rewrites the cookie (rolling)
         'AUTH_RECHECK_SECONDS': _int(env.get('AUTH_RECHECK_MINUTES'), 60) * 60,
-        'AUTH_OUTAGE_GRACE_SECONDS': _int(env.get('AUTH_OUTAGE_GRACE_DAYS'), 7) * 86400,
+        'AUTH_OUTAGE_GRACE_SECONDS': _int(env.get('AUTH_OUTAGE_GRACE_DAYS'), 35) * 86400,
         'AUTH_NOT_BEFORE': _int(env.get('AUTH_NOT_BEFORE'), 0),
         'MAX_CONTENT_LENGTH': 256 * 1024,
 

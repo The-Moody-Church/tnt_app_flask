@@ -21,31 +21,19 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from config import load_config  # noqa: E402
-from models import checkins, mp, roster  # noqa: E402
+from models import access, checkins, mp, roster  # noqa: E402
 
 DUMMY_GUID = '00000000-0000-0000-0000-000000000000'
 DEFAULT_ADMIN_GROUP_IDS = (29,)   # 'MP Next Admin' until a TNT Tracker Staff group exists
 
-EVENT_SELECT = 'Event_Groups.Event_ID,Event_ID_TABLE.Event_Start_Date'
-CHECKIN_SELECT = 'Event_Participant_ID,Event_ID,Participant_ID,Participation_Status_ID,Time_In,Time_Confirmed,Group_ID'
-LEADER_SELECT = 'Participant_ID_TABLE_Contact_ID_TABLE.User_Account'
 LEADER_LIST_SELECT = ('Group_Participants.Group_Participant_ID,Participant_ID_TABLE.Contact_ID,'
                       'Participant_ID_TABLE_Contact_ID_TABLE.Display_Name,'
                       'Participant_ID_TABLE_Contact_ID_TABLE.User_Account')
-ADMIN_SELECT = 'dp_User_User_Groups.User_ID,dp_User_User_Groups.User_Group_ID'
-USER_SELECT = ('dp_Users.User_ID,dp_Users.Contact_ID,Contact_ID_TABLE.Display_Name,Contact_ID_TABLE.Nickname,'
-               'Contact_ID_TABLE.First_Name,Contact_ID_TABLE.Last_Name')
-GP_SELECT = 'Group_Participant_ID,Group_ID,Participant_ID,Notes,End_Date'   # assign_team's pre-read
 
 
 def active_filter(group_id):
     return (f'Group_Participants.Group_ID = {mp.q_int(group_id)} AND Group_Participants.Start_Date <= GETDATE() '
             'AND (Group_Participants.End_Date IS NULL OR Group_Participants.End_Date >= GETDATE())')
-
-
-def leaders_filter(group_id):
-    """The sign-in membership query: active leaders who have an MP login."""
-    return f'{active_filter(group_id)} AND Participant_ID_TABLE_Contact_ID_TABLE.User_Account IS NOT NULL'
 
 
 def probes(cfg):
@@ -63,11 +51,11 @@ def probes(cfg):
 
     def gp_probe():
         gp_id = found.get('gp_id') or 1
-        return mp.mp_get('Group_Participants', select=GP_SELECT, filter=f'Group_Participant_ID = {mp.q_int(gp_id)}',
+        return mp.mp_get('Group_Participants', select=roster.GP_SELECT, filter=f'Group_Participant_ID = {mp.q_int(gp_id)}',
                          top=1, timeout=mp.SCRIPT_TIMEOUT)
 
     def event_probe():
-        rows = mp.mp_get('Event_Groups', select=EVENT_SELECT,
+        rows = mp.mp_get('Event_Groups', select=checkins.EVENT_SELECT,
                          filter=checkins.event_filter(cfg['MP_ROSTER_GROUP_ID'], today - timedelta(days=365),
                                                       today + timedelta(days=1)),
                          orderby='Event_Groups.Event_ID DESC', top=1, timeout=mp.SCRIPT_TIMEOUT)
@@ -76,21 +64,21 @@ def probes(cfg):
         return rows
 
     def checkin_probe():
-        return mp.mp_get('Event_Participants', select=CHECKIN_SELECT,
+        return mp.mp_get('Event_Participants', select=checkins.CHECKIN_SELECT,
                          filter=checkins.checkins_filter([found.get('event_id') or 1], []),
                          orderby='Event_Participant_ID', top=1, timeout=mp.SCRIPT_TIMEOUT)
 
     def leaders_probe():
-        return mp.mp_get('Group_Participants', select=LEADER_SELECT, filter=leaders_filter(cfg['MP_LEADER_GROUP_ID']),
+        return mp.mp_get('Group_Participants', select=access.LEADER_SELECT, filter=access.leaders_filter(cfg['MP_LEADER_GROUP_ID']),
                          distinct=True, top=1, timeout=mp.SCRIPT_TIMEOUT)
 
     def admins_probe():
-        return mp.mp_get('dp_User_User_Groups', select=ADMIN_SELECT,
-                         filter=f'dp_User_User_Groups.User_Group_ID IN ({mp.q_ids(admin_ids)})', top=1,
+        return mp.mp_get('dp_User_User_Groups', select=access.ADMIN_SELECT,
+                         filter=access.admins_filter(admin_ids), top=1,
                          timeout=mp.SCRIPT_TIMEOUT)
 
     def user_probe():
-        return mp.mp_get('dp_Users', select=USER_SELECT, filter=f'dp_Users.User_GUID = {mp.q_guid(DUMMY_GUID)}',
+        return mp.mp_get('dp_Users', select=access.USER_SELECT, filter=access.user_filter(DUMMY_GUID),
                          top=1, timeout=mp.SCRIPT_TIMEOUT)
 
     return [
@@ -180,7 +168,7 @@ def write_probe(cfg, gp_id, user_id, out=print):
     if not user_id:
         out('FAIL  write probe: --user-id (your dp_Users.User_ID, recorded in the MP audit log) is required')
         return 1
-    gp = mp.mp_get_one('Group_Participants', select=GP_SELECT, filter=f'Group_Participant_ID = {mp.q_int(gp_id)}',
+    gp = mp.mp_get_one('Group_Participants', select=roster.GP_SELECT, filter=f'Group_Participant_ID = {mp.q_int(gp_id)}',
                        timeout=mp.SCRIPT_TIMEOUT)
     if gp is None:
         out(f'FAIL  write probe: Group_Participant {gp_id} not found (or not readable)')

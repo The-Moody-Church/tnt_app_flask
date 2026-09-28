@@ -13,7 +13,8 @@
 </div>
 
 {% if section_entry %}
-<form id="editForm" method="POST" action="{{ url_for('edit_section') }}">
+<form id="editForm" data-json-form data-what="the section" method="POST" action="{{ url_for('edit_section') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="date_str" value="{{ date_str }}">
     <input type="hidden" name="team_name" value="{{ team_name }}">
     <input type="hidden" name="entry_id" value="{{ section_entry.id }}">
@@ -22,7 +23,7 @@
         <div class="details-header">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h3>Section Completion Details</h3>
-                {% if writable %}<button type="button" class="edit-button" onclick="toggleEditMode()">Edit</button>{% endif %}
+                {% if writable %}<button type="button" class="edit-button" data-action="toggle-edit">Edit</button>{% endif %}
             </div>
         </div>
         <div class="details-list">
@@ -43,7 +44,7 @@
         </div>
         <div class="edit-buttons">
             <button type="submit" class="save-button">Save</button>
-            <button type="button" class="cancel-button" onclick="toggleEditMode()">Cancel</button>
+            <button type="button" class="cancel-button" data-action="toggle-edit">Cancel</button>
         </div>
     </div>
 </form>
@@ -55,4 +56,3 @@
 {% endif %}
 {% endblock %}
 
-{% block extra_js %}{% include "_edit_script.html" %}{% endblock %}
