@@ -11,7 +11,8 @@
         <div class="team-badge {{ team_name|lower }}">{{ team_name|team_title }}</div>
     </div>
 
-    <form id="sectionForm" method="POST" action="{{ url_for('submit_section') }}">
+    <form id="sectionForm" data-json-form data-require-one data-what="the section" method="POST" action="{{ url_for('submit_section') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="team" value="{{ team_name }}">
         <input type="hidden" name="date_str" value="{{ date_str }}">
         <input type="hidden" name="contact_id" value="{{ kid.contact_id }}">
@@ -73,7 +74,7 @@
             <p style="font-weight: 600; margin: 0;">All credits already recorded!</p>
         </div>
         <div class="form-buttons">
-            <button type="button" class="cancel-button" onclick="window.history.back()">Go Back</button>
+            <button type="button" class="cancel-button" data-action="back">Go Back</button>
         </div>
         {% else %}
         <div class="form-group">
@@ -109,42 +110,10 @@
         </div>
 
         <div class="form-buttons">
-            <button type="submit" class="submit-button" id="submitBtn" disabled>Submit</button>
-            <button type="button" class="cancel-button" onclick="window.history.back()">Cancel</button>
+            <button type="submit" class="submit-button" id="submitBtn">Submit</button>
+            <button type="button" class="cancel-button" data-action="back">Cancel</button>
         </div>
         {% endif %}
     </form>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-const submitBtn = document.getElementById('submitBtn');
-if (!submitBtn) { /* read-only */ }
-const checkboxes = document.querySelectorAll('#sectionForm input[type="checkbox"]');
-function updateSubmitState() {
-    const anyChecked = Array.from(checkboxes).some(cb => cb.checked);
-    if (submitBtn) submitBtn.disabled = !anyChecked;
-}
-checkboxes.forEach(cb => cb.addEventListener('change', updateSubmitState));
-
-document.getElementById('sectionForm').addEventListener('submit', function(event) {
-    event.preventDefault();
-    const formData = new FormData(this);
-    fetch(this.action, {
-        method: 'POST',
-        body: formData,
-        redirect: 'follow'
-    }).then(response => {
-        if (response.ok) {
-            window.location.href = response.url;
-        } else {
-            response.json().then(b => alert(b.message || 'Error recording section'), () => alert('Error recording section'));
-        }
-    }).catch(error => {
-        console.error('Error:', error);
-        alert('Error recording section');
-    });
-});
-</script>
 {% endblock %}

@@ -1,0 +1,26 @@
+{% set show_header = true %}
+{% set page_title = "Account" %}
+{% set back_url = url_for('home') %}
+{% extends "base.html" %}
+
+{% block title %}TNT Reading Teams Tracker - Account{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="account-avatar account-avatar--large">{{ user.initials }}</div>
+    <h1>{{ user.name }}</h1>
+    <p class="subtitle">{{ user.role_label }} · signed in with MinistryPlatform</p>
+</div>
+
+<div class="kids-list account-actions">
+    <form method="post" action="{{ url_for('api_sync_roster') }}" data-json-form data-what="the refresh">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="section-row account-row">Refresh kids from MinistryPlatform <span class="arrow-icon">↻</span></button>
+    </form>
+    <form method="post" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="section-row account-row account-signout">Sign out <span class="arrow-icon">→</span></button>
+    </form>
+</div>
+<p class="empty-note">Version {{ config.ASSET_VERSION }}</p>
+{% endblock %}

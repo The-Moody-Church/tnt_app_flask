@@ -28,6 +28,9 @@ RETRY_AFTER = 20
 EVENT_CACHE_SECONDS = 6 * 3600
 EMPTY_EVENT_CACHE_SECONDS = 600   # 'no event' may just mean check-in isn't switched on yet
 CHECKED_IN_STATUSES = (3, 4)
+EVENT_SELECT = 'Event_Groups.Event_ID,Event_ID_TABLE.Event_Start_Date'
+CHECKIN_SELECT = ('Event_Participant_ID,Event_ID,Participant_ID,Participation_Status_ID,'
+                  'Time_In,Time_Confirmed,Group_ID')
 
 
 def key_for(d):
@@ -54,7 +57,7 @@ def event_filter(group_id, start, end):
 
 def fetch_event_ids_range(start, end_inclusive, *, timeout=mp.DEFAULT_TIMEOUT):
     """{date: [event_id, ...]} for check-in events linked to the T&T group between two dates."""
-    rows = mp.mp_get('Event_Groups', select='Event_Groups.Event_ID,Event_ID_TABLE.Event_Start_Date',
+    rows = mp.mp_get('Event_Groups', select=EVENT_SELECT,
                      filter=event_filter(roster_group_id(), start, end_inclusive + timedelta(days=1)),
                      orderby='Event_Groups.Event_ID', timeout=timeout)
     by_date = {}
@@ -80,9 +83,7 @@ def checkins_filter(event_ids, participant_ids):
 
 def fetch_checkins(event_ids, participant_ids, *, timeout=mp.DEFAULT_TIMEOUT):
     """-> {participant_id: {ep_id, time_in, time_confirmed, group_id}} (earliest Time_In wins)."""
-    rows = mp.mp_get('Event_Participants',
-                     select='Event_Participant_ID,Event_ID,Participant_ID,Participation_Status_ID,'
-                            'Time_In,Time_Confirmed,Group_ID',
+    rows = mp.mp_get('Event_Participants', select=CHECKIN_SELECT,
                      filter=checkins_filter(event_ids, participant_ids),
                      orderby='Event_Participant_ID', timeout=timeout)
     result = {}

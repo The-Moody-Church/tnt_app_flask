@@ -121,16 +121,56 @@ def fake_mp():
     sync_state.memo_clear()
 
 
+from flask.testing import FlaskClient  # noqa: E402
+
+
+class FetchClient(FlaskClient):
+    """POSTs look like the app's fetch() calls (tnt.post sends X-Requested-With: fetch) unless a test
+    overrides the header, e.g. headers={'X-Requested-With': ''} for a native HTML form post."""
+
+    def post(self, *args, **kwargs):
+        headers = dict(kwargs.pop('headers', None) or {})
+        headers.setdefault('X-Requested-With', 'fetch')
+        return super().post(*args, headers=headers, **kwargs)
+
+
 @pytest.fixture
 def app(conn, fake_mp):
     from tnt import create_app
     app = create_app({'TESTING': True, 'WTF_CSRF_ENABLED': False, 'TNT_DATE_OVERRIDE': TODAY.isoformat()})
+    app.test_client_class = FetchClient
     return app
+
+
+TEST_USER = {'guid': '11111111-2222-3333-4444-555555555555', 'user_id': 4242, 'contact_id': 99999,
+             'name': 'Test Leader', 'via': 'leader'}
+
+
+def login_session(client, *, checked_ago=0, auth_ago=0, **overrides):
+    """Sign the test client in the way the OIDC callback would (the only writer of session['user'])."""
+    import time
+    now = int(time.time())
+    user = {**TEST_USER, **overrides}
+    with client.session_transaction() as s:
+        s.permanent = True
+        s['user'] = user
+        s['auth_at'] = now - auth_ago
+        s['checked_at'] = now - checked_ago
+        s['aud'] = os.environ['APP_BASE_URL']
+    return user
+
+
+@pytest.fixture
+def anon_client(app):
+    return app.test_client()
 
 
 @pytest.fixture
 def client(app):
-    return app.test_client()
+    """A signed-in leader (membership checked just now, so no MP re-check happens)."""
+    c = app.test_client()
+    login_session(c)
+    return c
 
 
 @pytest.fixture

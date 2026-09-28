@@ -405,7 +405,10 @@ def test_sync_roster_force_skips_ttl_not_retry_window(seeded, fake_mp):
     fake_mp.tables['Group_Participants'] = roster_rows()
     assert roster.sync_roster(force=True, conn=seeded).state == 'fresh'    # seeded attempted moments ago
     assert fake_mp.calls == []
-    age(seeded, 'roster', 6)                                                 # still fresh, retry window passed
+    age(seeded, 'roster', 30)                                                # a double-tapped Refresh
+    assert roster.sync_roster(force=True, conn=seeded).state == 'fresh'
+    assert fake_mp.calls == []
+    age(seeded, 'roster', 61)                                                # still fresh, 60 s window passed
     assert roster.sync_roster(force=True, conn=seeded).state == 'synced'
     assert len(fake_mp.calls) == 1
 
@@ -482,9 +485,9 @@ def test_sync_roster_tiny_budget_skips_without_mp_call(stale_roster, fake_mp):
 def test_sync_roster_keeps_assignment_made_during_fetch(stale_roster, fake_mp):
     """A leader assigns Gus while the roster request is in flight; the older MP read must not undo it."""
     def rows(**kw):
-        # Stamped with the app clock (like fetched_at): Postgres now() can trail it by a fraction of a ms here.
-        stale_roster.execute("""UPDATE kids SET team = 'Blue', mp_notes = 'Blue', team_assigned_at = %s
-                                 WHERE contact_id = 1007""", (now(),))
+        # Both fetched_at and team_assigned_at come from the Postgres clock, so they compare cleanly.
+        stale_roster.execute("""UPDATE kids SET team = 'Blue', mp_notes = 'Blue', team_assigned_at = clock_timestamp()
+                                 WHERE contact_id = 1007""")
         return roster_rows()                           # read before the assignment reached MP
     fake_mp.tables['Group_Participants'] = rows
     assert roster.sync_roster(conn=stale_roster).state == 'synced'

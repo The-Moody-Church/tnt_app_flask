@@ -3,6 +3,8 @@ from flask import abort, redirect, render_template, request, url_for
 from models import data
 from models.fields import ATTENDANCE_FLAG_COLUMNS, ATTENDANCE_FLAGS, bools_from_form, team_label
 from models.utils import find_closest_date
+from routes.auth import current_user
+from routes.responses import saved
 from routes._common import form_date, form_int, live_sync, require_writable, resolve_day, resolve_team, show_all_requested
 
 
@@ -68,9 +70,9 @@ def register_attendance_routes(app):
         fields = bools_from_form(request.form, ATTENDANCE_FLAG_COLUMNS)
         if 'manual_present' in request.form:
             fields = {'manual_present': True, **fields}
-        data.set_attendance(contact_id=form_int('contact_id'), meeting_date=d, fields=fields)
-        return redirect(url_for('team_attendance_details', date_str=d.isoformat(),
-                                team_name=request.form.get('team') or 'Unassigned'))
+        data.set_attendance(contact_id=form_int('contact_id'), meeting_date=d, fields=fields, by=current_user())
+        return saved(url_for('team_attendance_details', date_str=d.isoformat(),
+                             team_name=request.form.get('team') or 'Unassigned'))
 
     @app.route('/edit_attendance', methods=['POST'])
     def edit_kid_attendance():
@@ -80,6 +82,7 @@ def register_attendance_routes(app):
         fields = bools_from_form(request.form, ATTENDANCE_FLAG_COLUMNS)
         if request.form.get('can_mark_present') == '1':
             fields['manual_present'] = 'manual_present' in request.form
-        data.set_attendance(contact_id=contact_id, meeting_date=d, fields=fields)
-        return redirect(url_for('kid_attendance_details', date_str=d.isoformat(),
-                                team_name=request.form.get('team_name') or 'Unassigned', contact_id=contact_id))
+        data.set_attendance(contact_id=contact_id, meeting_date=d, fields=fields, by=current_user())
+        return saved(url_for('kid_attendance_details', date_str=d.isoformat(),
+                             team_name=request.form.get('team_name') or 'Unassigned',
+                             contact_id=contact_id))

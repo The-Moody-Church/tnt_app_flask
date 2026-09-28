@@ -4,14 +4,17 @@ import psycopg
 from flask import Flask, g, jsonify, render_template, request
 
 from config import load_config
-from models import db
+from models import db, mp
 from models.errors import DataError
 from models.fields import team_title
 from models.utils import (date_display, date_to_long, date_to_mmdd, date_to_url, get_today, num,
                           parse_url_date, time_short)
+from routes.api import register_api_routes
+from routes.auth import init_auth
 from routes.home import register_home_routes
 from routes.attendance import register_attendance_routes
 from routes.progress import register_progress_routes
+from routes.responses import json_error, wants_json
 
 log = logging.getLogger(__name__)
 
@@ -24,22 +27,6 @@ def _maybe_load_dotenv():
     except ImportError:
         return
     load_dotenv()
-
-
-def wants_json():
-    if request.method not in ('GET', 'HEAD') or request.path.startswith('/api/'):
-        return True
-    if request.headers.get('X-Requested-With') == 'fetch':
-        return True
-    best = request.accept_mimetypes.best_match(['text/html', 'application/json'])
-    return best == 'application/json'
-
-
-def json_error(code, message, status, **extra):
-    resp = jsonify(ok=False, error=code, message=message, **extra)
-    resp.status_code = status
-    resp.headers['Cache-Control'] = 'no-store'
-    return resp
 
 
 def register_error_handlers(app):
@@ -57,6 +44,14 @@ def register_error_handlers(app):
             return json_error('db_unavailable', 'Can’t reach the database. Nothing was saved.', 503)
         return render_template('error.html', error_title='Database unavailable',
                                error_message='Can’t reach the database right now. Try again in a moment.'), 503
+
+    @app.errorhandler(mp.MPError)
+    def handle_mp_error(e):
+        log.warning('unhandled MP error: %s', e)
+        if wants_json():
+            return json_error('mp_unavailable', 'Couldn’t reach MinistryPlatform, so nothing was saved. Try again.', 503)
+        return render_template('error.html', error_title='MinistryPlatform unavailable',
+                               error_message='Couldn’t reach MinistryPlatform. Try again in a moment.'), 503
 
     @app.errorhandler(404)
     def handle_404(e):
@@ -109,7 +104,7 @@ def register_date_override(app):
 
 def create_app(overrides=None):
     _maybe_load_dotenv()
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder='public/static', static_url_path='/static')
     app.config.from_mapping(load_config(os.environ))
     if overrides:
         app.config.update(overrides)
@@ -120,11 +115,13 @@ def create_app(overrides=None):
         app.jinja_env.filters[name] = fn
 
     db.init_app(app)
-    register_date_override(app)
+    register_date_override(app)         # sets g.today_override only; must run even on the login page
+    init_auth(app)                      # login gate + CSRF, before any route-level work
     register_error_handlers(app)
     register_home_routes(app)
     register_attendance_routes(app)
     register_progress_routes(app)
+    register_api_routes(app)
 
     @app.get('/healthz')
     def healthz():

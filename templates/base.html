@@ -20,6 +20,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css?v={{ config.ASSET_VERSION }}">
+    {% if current_user %}<meta name="csrf-token" content="{{ csrf_token() }}">{% endif %}
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -31,7 +32,7 @@
         <div class="header-spacer"></div>
         {% endif %}
         <h1 class="header-title">{{ page_title or 'TNT Tracker' }}</h1>
-        <div class="header-action">{% block header_action %}{% endblock %}</div>
+        <div class="header-action">{% block header_action %}{% if current_user %}<a class="account-avatar" href="{{ url_for('auth.account') }}" aria-label="Account: {{ current_user.name }}">{{ current_user.initials }}</a>{% endif %}{% endblock %}</div>
     </header>
     {% endif %}
     {% include "_qa_ribbon.html" %}
@@ -55,14 +56,7 @@
         {% block content %}{% endblock %}
     </main>
 
-    <script>
-    document.querySelectorAll('form').forEach(function(form) {
-        form.addEventListener('submit', function() {
-            var btn = form.querySelector('button[type="submit"]');
-            if (btn) btn.classList.add('loading');
-        });
-    });
-    </script>
+    <script src="/static/app.js?v={{ config.ASSET_VERSION }}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

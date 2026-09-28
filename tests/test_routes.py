@@ -6,7 +6,7 @@ import psycopg
 import pytest
 
 from models import data, mp
-from tests.conftest import D_0909, D_0916, D_0923, D_0930, add_attendance, add_section
+from tests.conftest import FetchClient, login_session, D_0909, D_0916, D_0923, D_0930, add_attendance, add_section
 
 D = '2026-09-23'   # tonight (TODAY)
 FUTURE = '2026-09-30'
@@ -20,8 +20,9 @@ def _html(resp):
 
 
 def _loc(resp):
-    """Redirect target as path[?query] (the test client may return an absolute URL)."""
-    parts = urlsplit(resp.headers['Location'])
+    """Redirect target as path[?query]: the Location header for GETs, the JSON `redirect` for POSTs."""
+    target = resp.headers.get('Location') or (resp.get_json(silent=True) or {}).get('redirect')
+    parts = urlsplit(target)
     return parts.path + (f'?{parts.query}' if parts.query else '')
 
 
@@ -444,7 +445,7 @@ def test_checkin_form(client, seeded):
 def test_submit_checkin_marks_present_with_items(client, seeded, fake_mp):
     resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1003', 'team': 'Blue',
                                                 'manual_present': 'on', 'has_bible': 'on', 'has_dues': 'on'})
-    assert resp.status_code == 302
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True
     assert _loc(resp) == f'/attendance/{D}/team/Blue'
     row = _att(seeded, 1003)
     assert row['manual_present'] and row['present'] and not row['mp_checked_in']
@@ -461,9 +462,35 @@ def test_submit_checkin_marks_present_with_items(client, seeded, fake_mp):
 def test_submit_checkin_present_only(client, seeded):
     resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1003', 'team': 'Blue',
                                                 'manual_present': 'on'})
-    assert resp.status_code == 302
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True
     row = _att(seeded, 1003)
     assert row['present'] and not any(_flags(row).values())
+
+
+NATIVE = {'X-Requested-With': ''}      # a plain HTML form post (no JavaScript)
+
+
+def test_submit_checkin_native_form_post_redirects_after_saving(client, seeded):
+    resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1003', 'team': 'Blue',
+                                                'manual_present': 'on'}, headers=NATIVE)
+    assert resp.status_code == 303
+    assert urlsplit(resp.headers['Location']).path == f'/attendance/{D}/team/Blue'
+    assert _att(seeded, 1003)['present']
+
+
+def test_submit_checkin_native_form_post_error_is_an_html_page(client, seeded):
+    resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1003', 'team': 'Blue',
+                                                'has_bible': 'on'}, headers=NATIVE)
+    assert resp.status_code == 409 and resp.mimetype == 'text/html'
+    assert resp.get_json(silent=True) is None
+    assert _att(seeded, 1003) is None
+
+
+@pytest.mark.parametrize('accept', ['application/json', 'application/json, text/html;q=0.5'])
+def test_submit_checkin_json_accept_gets_json(client, seeded, accept):
+    resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1003', 'team': 'Blue',
+                                                'manual_present': 'on'}, headers={**NATIVE, 'Accept': accept})
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True
 
 
 def test_submit_checkin_items_without_present_is_409_and_saves_nothing(client, seeded):
@@ -486,7 +513,7 @@ def test_submit_checkin_items_without_present_keeps_existing_row(client, seeded)
 def test_submit_checkin_items_for_mp_checked_in_kid(client, night):
     resp = client.post('/submit_checkin', data={'date_str': D, 'contact_id': '1001', 'team': 'Red',
                                                 'wearing_shirt': 'on'})
-    assert resp.status_code == 302
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True
     row = _att(night, 1001)
     assert row['mp_checked_in'] and not row['manual_present']
     assert row['wearing_shirt'] and not row['has_bible']      # the form sends every flag
@@ -520,7 +547,7 @@ def test_submit_checkin_rejects_bad_input(client, seeded, form, status, code):
 def test_edit_attendance_sets_flags_exactly(client, night):
     resp = client.post('/edit_attendance', data={'date_str': D, 'team_name': 'Red', 'contact_id': '1001',
                                                  'has_book': 'on', 'did_homework': 'on'})
-    assert resp.status_code == 302
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True
     assert _loc(resp) == f'/attendance/{D}/team/Red/kid/1001'
     row = _att(night, 1001)
     assert _flags(row) == {'has_bible': False, 'wearing_shirt': False, 'has_book': True,
@@ -540,7 +567,7 @@ def test_edit_attendance_mark_present_and_items(client, seeded):
     resp = client.post('/edit_attendance', data={'date_str': D, 'team_name': 'Blue', 'contact_id': '1003',
                                                  'can_mark_present': '1', 'manual_present': 'on',
                                                  'wearing_shirt': 'on'})
-    assert resp.status_code == 302
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True
     row = _att(seeded, 1003)
     assert row['manual_present'] and row['present'] and row['wearing_shirt']
 
@@ -551,7 +578,7 @@ def test_edit_attendance_unmarking_manual_present_clears_items(client, seeded):
                    "WHERE contact_id = 1002")
     resp = client.post('/edit_attendance', data={'date_str': D, 'team_name': 'Red', 'contact_id': '1002',
                                                  'can_mark_present': '1', 'has_bible': 'on'})
-    assert resp.status_code == 302
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True
     row = _att(seeded, 1002)
     assert not row['manual_present'] and not row['present']
     assert not any(_flags(row).values())
@@ -624,7 +651,7 @@ def test_record_section_form_future_date_is_read_only(client, seeded):
 def test_past_meeting_dates_are_writable(client, seeded):
     resp = client.post('/submit_checkin', data={'date_str': '2026-09-16', 'contact_id': '1003', 'team': 'Blue',
                                                 'manual_present': 'on'})
-    assert resp.status_code == 302
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True
     assert _att(seeded, 1003, D_0916)['present']
 
 
@@ -639,7 +666,7 @@ def _submit(client, **form):
 
 def test_submit_section_creates_row_and_redirects_to_team(client, night):
     resp = _submit(client, section_complete='on')
-    assert resp.status_code == 302
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True
     assert _loc(resp) == f'/home/{D}/team/Red'
     row = _sec(night, 1001, D_0923, '1.2')
     assert _credits(row) == (True, False, False)
@@ -679,14 +706,14 @@ def test_submit_section_takes_the_team_on_tonights_attendance_row(client, seeded
 
 def test_submit_section_for_unassigned_kid(client, night):
     resp = _submit(client, contact_id='1007', team='Unassigned', section_complete='on')
-    assert resp.status_code == 302
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True
     assert _sec(night, 1007, D_0923, '1.2')['team'] is None
     assert client.get(_loc(resp), follow_redirects=True).status_code == 200
 
 
 def test_submit_section_with_spaces_in_section_name(client, seeded):
     resp = _submit(client, date_str='2026-09-09', section='Start Zone 1', gold_credit='on')
-    assert resp.status_code == 302
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True
     assert _credits(_sec(seeded, 1001, D_0909, 'Start Zone 1')) == (False, False, True)
 
 
@@ -749,7 +776,7 @@ def test_record_section_form_with_spaces_in_section_name(client, seeded):
 def test_edit_section_clears_credits_and_redirects_to_details(client, night):
     entry_id = add_section(night, 1001, D_0923, '1.2', complete=True, silver=True)
     resp = client.post('/edit_section', data={'date_str': D, 'team_name': 'Red', 'entry_id': str(entry_id)})
-    assert resp.status_code == 302
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True
     assert _loc(resp) == f'/home/{D}/team/Red/kid/1001/section/1.2'
     assert _credits(_entry(night, entry_id)) == (False, False, False)      # kept, never deleted
     assert '/kid/1001/section/1.2' not in _html(client.get(f'/home/{D}/team/Red'))
@@ -888,7 +915,7 @@ def test_student_section_details_future_entry_is_read_only(client, seeded):
 def test_edit_progress_section_sets_exact_values(client, seeded, history):
     entry_id = history['1.2']
     resp = client.post('/edit_progress_section', data={'entry_id': str(entry_id), 'gold_credit': 'on'})
-    assert resp.status_code == 302
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True
     assert _loc(resp) == f'/progress/student/1001/record/{entry_id}'
     assert _credits(_entry(seeded, entry_id)) == (False, False, True)
 
@@ -995,7 +1022,7 @@ def test_qa_today_param_sets_cookie_and_moves_today(client, seeded):
     assert 'Testing as September 30, 2026' in body
     resp = client.post('/submit_checkin', data={'date_str': FUTURE, 'contact_id': '1003', 'team': 'Blue',
                                                 'manual_present': 'on'})
-    assert resp.status_code == 302                                   # 9/30 is "today" now
+    assert resp.status_code == 200 and resp.get_json()['ok'] is True                                   # 9/30 is "today" now
     assert _att(seeded, 1003, D_0930)['present']
 
 
@@ -1028,7 +1055,10 @@ def locked_client(seeded, fake_mp):
     seeded.execute("INSERT INTO schedule (meeting_date, theme) VALUES ('2099-01-07', 'Far Future')")
     app = create_app({'TESTING': True, 'WTF_CSRF_ENABLED': False, 'ALLOW_DATE_OVERRIDE': False,
                       'TNT_DATE_OVERRIDE': None})
-    return app.test_client()
+    app.test_client_class = FetchClient
+    c = app.test_client()
+    login_session(c)
+    return c
 
 
 def test_qa_today_ignored_when_override_disallowed(locked_client, seeded):

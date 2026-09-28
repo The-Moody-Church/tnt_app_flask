@@ -140,6 +140,7 @@ class MPClient:
         self._lock = threading.Lock()
         self._token = None
         self._token_expires = 0.0
+        self._token_failed_until = 0.0
 
     @classmethod
     def from_env(cls, env=None):
@@ -170,6 +171,8 @@ class MPClient:
         with self._lock:
             if not force and self._token and time.time() < self._token_expires:
                 return self._token
+            if time.time() < self._token_failed_until:
+                raise MPUnavailable('token_recently_failed', op='token')
             if not (self.client_id and self.client_secret):
                 raise MPAuthError('not_configured', op='token')
             try:
@@ -180,6 +183,7 @@ class MPClient:
                     headers={'Content-Type': 'application/x-www-form-urlencoded'},
                     timeout=timeout)
             except requests.RequestException as e:
+                self._token_failed_until = time.time() + 15
                 raise MPUnavailable(type(e).__name__, op='token') from None
             if resp.status_code in (400, 401):
                 raise MPAuthError('token_rejected', op='token', status=resp.status_code)

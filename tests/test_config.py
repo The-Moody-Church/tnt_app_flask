@@ -36,6 +36,13 @@ def test_production_requires_32_char_secret_key(secret):
         load_config(prod_env(SECRET_KEY=secret))
 
 
+@pytest.mark.parametrize('secret', ['short', 'p' * 31])
+def test_preview_rejects_a_short_secret_key(secret):
+    """A guessable key on a preview could forge sessions; set a real one or none (login then stays off)."""
+    with pytest.raises(RuntimeError, match='SECRET_KEY'):
+        load_config({'VERCEL_ENV': 'preview', 'SECRET_KEY': secret})
+
+
 def test_production_accepts_exactly_32_char_secret_key():
     assert load_config(prod_env(SECRET_KEY='q' * 32))['SECRET_KEY'] == 'q' * 32
 
@@ -109,6 +116,27 @@ def test_app_base_url_trailing_slash_stripped():
     assert load_config(prod_env(APP_BASE_URL='https://tnt.example.org/'))['APP_BASE_URL'] == 'https://tnt.example.org'
 
 
+@pytest.mark.parametrize('value, expected', [
+    ('https://TNT.Example.ORG', 'https://tnt.example.org'),
+    ('https://tnt.example.org:443/', 'https://tnt.example.org'),
+    ('http://localhost:80', 'http://localhost'),
+    ('http://localhost:5001', 'http://localhost:5001'),
+    ('https://tnt.example.org:8443', 'https://tnt.example.org:8443'),
+    ('  https://tnt.example.org/  ', 'https://tnt.example.org'),
+])
+def test_app_base_url_is_normalized_to_an_origin(value, expected):
+    """It is compared with the request host (login bounce) and stored as the session's aud."""
+    assert load_config({'APP_BASE_URL': value})['APP_BASE_URL'] == expected
+
+
+@pytest.mark.parametrize('value', ['https://tnt.example.org/app', 'https://tnt.example.org/?x=1',
+                                   'https://tnt.example.org/#top', 'tnt.example.org', 'ftp://tnt.example.org',
+                                   'https://'])
+def test_app_base_url_with_a_path_or_no_origin_is_rejected(value):
+    with pytest.raises(ValueError, match='APP_BASE_URL'):
+        load_config({'APP_BASE_URL': value})
+
+
 def test_load_config_reads_os_environ_by_default(monkeypatch):
     monkeypatch.setenv('ADMIN_USER_GROUP_IDS', '7')
     monkeypatch.delenv('VERCEL_ENV', raising=False)
@@ -145,7 +173,7 @@ def test_session_cookie_policy(env):
     assert cfg['SESSION_COOKIE_SAMESITE'] == 'Lax'
     assert cfg['SESSION_COOKIE_HTTPONLY'] is True
     assert cfg['PERMANENT_SESSION_LIFETIME'] == timedelta(days=35)
-    assert cfg['SESSION_REFRESH_EACH_REQUEST'] is True
+    assert cfg['SESSION_REFRESH_EACH_REQUEST'] is False    # the hourly re-check rewrites the cookie (rolling)
 
 
 def test_session_lifetime_override():
@@ -156,7 +184,7 @@ def test_session_lifetime_override():
 def test_auth_timing_defaults_and_overrides():
     cfg = load_config({})
     assert cfg['AUTH_RECHECK_SECONDS'] == 3600
-    assert cfg['AUTH_OUTAGE_GRACE_SECONDS'] == 7 * 86400
+    assert cfg['AUTH_OUTAGE_GRACE_SECONDS'] == 35 * 86400        # as long as the session itself lives
     assert cfg['AUTH_NOT_BEFORE'] == 0
     cfg = load_config({'AUTH_RECHECK_MINUTES': '15', 'AUTH_OUTAGE_GRACE_DAYS': '2', 'AUTH_NOT_BEFORE': '1790000000'})
     assert cfg['AUTH_RECHECK_SECONDS'] == 900

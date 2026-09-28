@@ -1,14 +1,4 @@
 {
-  "builds": [
-    {
-      "src": "tnt.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "tnt.py"
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["cle1"]
 }

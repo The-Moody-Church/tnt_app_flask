@@ -25,6 +25,7 @@ ROSTER_KEY = 'roster'
 ROSTER_TTL = 600
 RETRY_AFTER = 20
 
+GP_SELECT = 'Group_Participant_ID,Group_ID,Participant_ID,Notes,End_Date'   # assign_team pre-read
 ROSTER_SELECT = ','.join([
     'Group_Participants.Group_Participant_ID',
     'Group_Participants.Participant_ID',
@@ -151,7 +152,7 @@ def sync_roster(*, force=False, budget=None, conn=None):
         return memo
     if not force and sync_state.mp_is_down(conn):
         return sync_state.status_when_mp_down(ROSTER_KEY, sync_state.read(conn, ROSTER_KEY), ROSTER_TTL)
-    claimed = sync_state.claim(conn, ROSTER_KEY, ttl=ROSTER_TTL, retry_after=5 if force else RETRY_AFTER,
+    claimed = sync_state.claim(conn, ROSTER_KEY, ttl=ROSTER_TTL, retry_after=60 if force else RETRY_AFTER,
                                force=force)
     if claimed is None:
         row = sync_state.read(conn, ROSTER_KEY)
@@ -217,8 +218,7 @@ def assign_team(*, contact_id, team, by, conn=None):
     if kid['team']:
         raise Conflict('already_assigned', f"Already on {kid['team']}", team=kid['team'])
 
-    gp = mp.mp_get_one('Group_Participants',
-                       select='Group_Participant_ID,Group_ID,Participant_ID,Notes,End_Date',
+    gp = mp.mp_get_one('Group_Participants', select=GP_SELECT,
                        filter=f"Group_Participant_ID = {mp.q_int(kid['group_participant_id'])}")
     if (gp is None or gp.get('Group_ID') != roster_group_id()
             or gp.get('Participant_ID') != kid['participant_id']):
