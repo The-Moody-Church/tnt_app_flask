@@ -13,59 +13,34 @@
     <p class="subtitle">{{ day_data.meeting_date|date_display }} - {{ day_data.theme }}</p>
 </div>
 
-<form id="editForm" data-json-form data-what="attendance" method="POST" action="{{ url_for('edit_kid_attendance') }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="date_str" value="{{ date_str }}">
-    <input type="hidden" name="team_name" value="{{ team_name }}">
-    <input type="hidden" name="contact_id" value="{{ kid.contact_id }}">
-    {% if not kid.mp_checked_in %}<input type="hidden" name="can_mark_present" value="1">{% endif %}
-
-    <div class="attendance-details" id="attendanceDetails">
-        <div class="details-header">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h3>Details</h3>
-                {% if writable %}<button type="button" class="edit-button" data-action="toggle-edit">Edit</button>{% endif %}
-            </div>
-        </div>
-        <div class="details-list">
-            <div class="detail-row">
-                <span class="detail-label">Present:</span>
-                {% if kid.mp_checked_in %}
-                <div class="detail-status">
-                    <span class="status-text present-status">{{ present_label(kid) }}</span>
-                </div>
+<div class="attendance-details kid-live" data-name="{{ kid.name }}"
+     data-url="{{ url_for('api_attendance_set', date_str=date_str, contact_id=kid.contact_id) }}">
+    <div class="details-list">
+        <div class="detail-row">
+            <span class="detail-label">Present:</span>
+            <div class="detail-status">
+                <span class="status-text present-status{% if not kid.present %} is-absent{% elif kid.source == 'manual' %} is-manual{% endif %}">{{ present_label(kid) }}</span>
+                {% if writable and not kid.mp_checked_in %}
+                {% if kid.manual_present %}
+                <button type="button" class="mark-present is-undo" data-mark-present="off">Undo</button>
                 {% else %}
-                <div class="detail-status">
-                    <div class="status-display">
-                        <span class="status-text present-status{% if not kid.present %} is-absent{% endif %}">{{ present_label(kid) }}</span>
-                    </div>
-                    <label class="toggle-switch" title="Mark present (not checked in at the kiosk)">
-                        <input type="checkbox" name="manual_present" {% if kid.manual_present %}checked{% endif %}>
-                        <span class="slider"></span>
-                    </label>
-                </div>
+                <button type="button" class="mark-present" data-mark-present="on">Mark present</button>
+                {% endif %}
                 {% endif %}
             </div>
-            {% for field, _, label in flags %}
-            <div class="detail-row">
-                <span class="detail-label">{{ label }}:</span>
-                <div class="detail-status">
-                    <div class="status-display">
-                        {% if kid[field] %}<span class="status-icon check">✓</span>{% else %}<span class="status-icon x">✗</span>{% endif %}
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" name="{{ field }}" {% if kid[field] %}checked{% endif %}>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        <div class="edit-buttons">
-            <button type="submit" class="save-button">Save</button>
-            <button type="button" class="cancel-button" data-action="toggle-edit">Cancel</button>
         </div>
     </div>
-</form>
+    <div class="chip-column" role="group" aria-label="Attendance for {{ kid.name }}">
+        {% for field, _, label in flags %}
+        <button type="button" class="chip-toggle chip-toggle--wide" data-field="{{ field }}" data-label="{{ label }}"
+                aria-pressed="{{ 'true' if kid[field] else 'false' }}"
+                {% if not writable or (not kid.present and not kid[field]) %}disabled{% endif %}>{{ label }}</button>
+        {% endfor %}
+    </div>
+    {% if not kid.present and writable %}
+    <p class="kid-note">Mark {{ kid.nickname or kid.first_name }} present to record their items.</p>
+    {% elif not writable %}
+    <p class="kid-note">This date hasn’t happened yet, so nothing can be recorded.</p>
+    {% endif %}
+</div>
 {% endblock %}
-

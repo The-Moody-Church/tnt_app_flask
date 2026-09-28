@@ -137,7 +137,9 @@ class FetchClient(FlaskClient):
 @pytest.fixture
 def app(conn, fake_mp):
     from tnt import create_app
-    app = create_app({'TESTING': True, 'WTF_CSRF_ENABLED': False, 'TNT_DATE_OVERRIDE': TODAY.isoformat()})
+    # MP writes on, matching FakeMP's default (tests that need them off pass MP_WRITES_ENABLED=False).
+    app = create_app({'TESTING': True, 'WTF_CSRF_ENABLED': False, 'TNT_DATE_OVERRIDE': TODAY.isoformat(),
+                      'MP_WRITES_ENABLED': True})
     app.test_client_class = FetchClient
     return app
 

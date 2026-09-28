@@ -84,6 +84,18 @@ Pretend it's club night: `TNT_DATE_OVERRIDE=2026-09-23` in `.env`, or `?today=20
 - Walk-ins can have `Event_Participants.Group_ID` NULL and Notes "Created by CheckIn" (team = Unassigned).
 - MP datetimes are naive Central time (`mp.parse_mp_datetime` attaches America/Chicago).
 
+## Club-night UX
+
+- `/` and `/attendance` open straight to tonight's team (cookie `tnt_team`, set by team pages) on a scheduled,
+  non-"NO AWANA" date; `?all=1` shows the date list (`routes/_common.tonight_redirect`).
+- Attendance is tap-to-toggle chips → `POST /api/attendance/<d>/<cid>` `{"set": {field: bool}}` (absolute values,
+  so retries are safe; JS reconciles only the tapped field and ignores stale Retries).
+- Tonight's scheduled section(s) (`schedule.sections`) are pinned on the record-section list with one-tap credits
+  → `POST /api/sections/<d>/<cid>`. Credits earned on another night are shown "✓ m/d" and can't be tapped.
+- Unassigned kids get "Assign team" (bottom sheet) → `POST /api/kids/<cid>/team`, which writes MP `Notes`; only
+  when `MP_WRITES_ENABLED`.
+- Toasts appear at the top (never over the rows just tapped); a red toast means "not saved".
+
 ## Templates / CSS
 
 - `base.html` (header + bottom nav) and `fullscreen_base.html` (form pages). Shared bits in `_macros.html`.

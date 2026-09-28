@@ -13,29 +13,44 @@
         <p class="subtitle">{{ day_data.meeting_date|date_display }} — tap a section to record</p>
     </div>
 
+    {% if pinned %}
+    <div class="tonight-card">
+        <p class="tonight-card__title">{% if is_tonight %}Tonight’s section{{ 's' if pinned|length > 1 }}{% else %}Section{{ 's' if pinned|length > 1 }} for {{ day_data.meeting_date|date_to_mmdd }}{% endif %}</p>
+        {% for item in pinned %}
+        <div class="tonight-section">
+            <a class="tonight-section__name" href="{{ url_for('record_section_form', date_str=date_str, team_name=team_name, contact_id=kid.contact_id, section=item.section) }}">{{ item.section }}</a>
+            <div class="credit-row" role="group" aria-label="Credits for {{ item.section }}">
+                {% for field, short, _ in credits %}
+                {% set st = item.states[field] %}
+                <button type="button" class="credit-chip credit-chip--{{ field }}" data-section="{{ item.section }}"
+                        data-field="{{ field }}" data-label="{{ short }}" data-state="{{ st.state }}"
+                        data-url="{{ url_for('api_section_credit', date_str=date_str, contact_id=kid.contact_id) }}"
+                        aria-pressed="{{ 'true' if st.state == 'today' else 'false' }}"
+                        {% if st.state == 'earlier' or not writable %}disabled{% endif %}>
+                    {{ {'section_complete': 'Main', 'silver_credit': '🥈 Silver', 'gold_credit': '🥇 Gold'}[field] }}
+                    <span class="credit-chip__when">{{ '✓ ' ~ (st.date|date_to_mmdd) if st.state == 'earlier' else '' }}</span>
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <div class="kids-list">
         {% for item in sections %}
         {% set all_done = item.main_date and item.silver and item.gold %}
         <a class="section-row {% if all_done %}complete{% endif %}"
            href="{{ url_for('record_section_form', date_str=date_str, team_name=team_name, contact_id=kid.contact_id, section=item.section) }}">
             <div style="flex:1; min-width:0;">
-                <span class="section-name">{{ item.section }}</span>
-                <div style="margin-top:6px; display:flex; gap:5px; flex-wrap:nowrap;">
-                    {% if item.main_date %}
-                    <span style="background:#e8f5e9; color:#2e7d32; font-size:0.72em; font-weight:600; padding:3px 8px; border-radius:10px; white-space:nowrap;">✓ {{ item.main_date|date_to_mmdd }}</span>
-                    {% else %}
-                    <span style="background:#f0f0f0; color:#bbb; font-size:0.72em; padding:3px 8px; border-radius:10px;">Main</span>
-                    {% endif %}
-                    {% if item.silver %}
-                    <span style="background:#f0f0f0; color:#555; font-size:0.72em; font-weight:600; padding:3px 8px; border-radius:10px;">🥈</span>
-                    {% else %}
-                    <span style="background:#f0f0f0; color:#bbb; font-size:0.72em; padding:3px 8px; border-radius:10px;">Silver</span>
-                    {% endif %}
-                    {% if item.gold %}
-                    <span style="background:#fffde7; color:#b8860b; font-size:0.72em; font-weight:600; padding:3px 8px; border-radius:10px;">🥇</span>
-                    {% else %}
-                    <span style="background:#f0f0f0; color:#bbb; font-size:0.72em; padding:3px 8px; border-radius:10px;">Gold</span>
-                    {% endif %}
+                <span class="section-name">{{ item.section }}</span>{% if item.pinned and is_tonight %}<span class="tonight-tag">Tonight</span>{% endif %}
+                <div class="mini-chips">
+                    <span class="mini-chip mini-chip--main{% if item.main_date %} is-on{% endif %}" data-section="{{ item.section }}"
+                          data-field="section_complete" data-off="Main" data-on="✓ {{ (item.main_date or day_data.meeting_date)|date_to_mmdd }}">{% if item.main_date %}✓ {{ item.main_date|date_to_mmdd }}{% else %}Main{% endif %}</span>
+                    <span class="mini-chip mini-chip--silver{% if item.silver %} is-on{% endif %}" data-section="{{ item.section }}"
+                          data-field="silver_credit" data-off="Silver" data-on="🥈">{% if item.silver %}🥈{% else %}Silver{% endif %}</span>
+                    <span class="mini-chip mini-chip--gold{% if item.gold %} is-on{% endif %}" data-section="{{ item.section }}"
+                          data-field="gold_credit" data-off="Gold" data-on="🥇">{% if item.gold %}🥇{% else %}Gold{% endif %}</span>
                 </div>
             </div>
             {% if all_done %}<span style="font-size:1.1em; margin-right:4px;">🏆</span>{% endif %}

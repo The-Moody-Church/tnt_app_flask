@@ -37,6 +37,7 @@
             btn.addEventListener('click', function () { el.remove(); opts.action.run(); });
             el.appendChild(btn);
         }
+        el.addEventListener('click', function (e) { if (!e.target.closest('.toast__action')) el.remove(); });
         region().appendChild(el);
         setTimeout(function () { el.remove(); }, opts.type === 'error' ? 7000 : 3500);
     }
@@ -165,7 +166,245 @@
         }
     });
 
-    document.addEventListener('DOMContentLoaded', initJsonForms);
+
+    // -- club night: tap-to-toggle chips ---------------------------------------
+    // <button class="chip-toggle" data-field="has_bible" aria-pressed="false"> inside
+    // <li class="kid-row" data-url="/api/attendance/<d>/<cid>" data-name="Ezra A.">
+    // Each tap sends the absolute new value (idempotent). Only that field is reconciled from the
+    // response, so two quick taps on different chips can't clobber each other.
+    function setPressed(el, on) {
+        el.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+
+    function initAttendanceChips() {
+        document.addEventListener('click', function (event) {
+            var chip = event.target.closest('.chip-toggle');
+            if (!chip || chip.disabled) return;
+            event.preventDefault();
+            if (chip.dataset.busy) return;
+            var row = chip.closest('[data-url]');
+            var field = chip.getAttribute('data-field');
+            var was = chip.getAttribute('aria-pressed') === 'true';
+            var body = { set: {} };
+            body.set[field] = !was;
+            var seq = String(Number(chip.dataset.seq || 0) + 1);
+            chip.dataset.seq = seq;
+            var what = (chip.getAttribute('data-label') || 'that') + ' for ' + (row.getAttribute('data-name') || 'this kid');
+            var send = function () {
+                // A Retry from an old toast does nothing once the chip has been tapped again.
+                if (chip.dataset.seq !== seq || chip.dataset.busy) return;
+                chip.dataset.busy = '1';
+                chip.classList.add('is-pending');
+                setPressed(chip, !was);
+                return post(row.getAttribute('data-url'), body, { what: what, retry: send })
+                    .then(function (data) {
+                        if (data.row && field in data.row) setPressed(chip, !!data.row[field]);
+                    })
+                    .catch(function () { if (chip.dataset.seq === seq) setPressed(chip, was); })
+                    .then(function () {
+                        delete chip.dataset.busy;
+                        chip.classList.remove('is-pending');
+                    });
+            };
+            send();
+        });
+    }
+
+    // -- mark present (kid wasn't checked in at the kiosk) ----------------------
+    function initMarkPresent() {
+        document.addEventListener('click', function (event) {
+            var btn = event.target.closest('[data-mark-present]');
+            if (!btn || btn.disabled || btn.dataset.busy) return;
+            event.preventDefault();
+            var row = btn.closest('[data-url]');
+            var on = btn.getAttribute('data-mark-present') === 'on';
+            var name = row.getAttribute('data-name') || 'this kid';
+            var question = on ? 'Mark ' + name + ' present?\nOnly if they’re here but weren’t checked in at the kiosk.'
+                              : 'Undo marking ' + name + ' present? Their items for tonight are cleared too.';
+            if (!confirm(question)) return;
+            btn.dataset.busy = '1';
+            post(row.getAttribute('data-url'), { set: { manual_present: on } }, { what: 'present for ' + name })
+                .then(function () { location.reload(); })
+                .catch(function () { delete btn.dataset.busy; });
+        });
+    }
+
+    // -- tonight's section: one-tap Main / Silver / Gold -----------------------
+    // <button class="credit-chip" data-url="/api/sections/<d>/<cid>" data-section="1.5"
+    //         data-field="silver_credit" data-state="none|today|earlier">
+    function applyCreditStates(section, states) {
+        var sel = '[data-section="' + CSS.escape(section) + '"]';
+        document.querySelectorAll('.credit-chip' + sel).forEach(function (el) {
+            var st = states[el.getAttribute('data-field')];
+            if (!st) return;
+            el.setAttribute('data-state', st.state);
+            el.setAttribute('aria-pressed', st.state === 'today' ? 'true' : 'false');
+            el.disabled = st.state === 'earlier';
+            var label = el.querySelector('.credit-chip__when');
+            if (label) label.textContent = st.label || '';
+        });
+        // Keep the same section's row in the full list below in step.
+        document.querySelectorAll('.mini-chip' + sel).forEach(function (el) {
+            var st = states[el.getAttribute('data-field')];
+            if (!st) return;
+            el.classList.toggle('is-on', st.state !== 'none');
+            if (st.state === 'none') el.textContent = el.getAttribute('data-off');
+            else if (st.state === 'earlier' && st.label && el.getAttribute('data-field') === 'section_complete')
+                el.textContent = st.label;                       // "✓ 9/16": earned on another night
+            else el.textContent = el.getAttribute('data-on');
+        });
+    }
+
+    function initCreditChips() {
+        document.addEventListener('click', function (event) {
+            var chip = event.target.closest('.credit-chip');
+            if (!chip || chip.disabled || chip.dataset.busy) return;
+            event.preventDefault();
+            var was = chip.getAttribute('data-state') === 'today';
+            var section = chip.getAttribute('data-section');
+            var body = { section: section, field: chip.getAttribute('data-field'), value: !was };
+            var seq = String(Number(chip.dataset.seq || 0) + 1);
+            chip.dataset.seq = seq;
+            var send = function () {
+                if (chip.dataset.seq !== seq || chip.dataset.busy) return;
+                chip.dataset.busy = '1';
+                chip.classList.add('is-pending');
+                chip.setAttribute('data-state', was ? 'none' : 'today');
+                return post(chip.getAttribute('data-url'), body,
+                            { what: (chip.getAttribute('data-label') || 'that credit') + ' for ' + section, retry: send })
+                    .then(function (data) { applyCreditStates(section, data.states || {}); })
+                    .catch(function (e) {
+                        var st = e.result && e.result.data && e.result.data.states;
+                        if (st) applyCreditStates(section, st);          // e.g. already earned on another night
+                        else if (chip.dataset.seq === seq) chip.setAttribute('data-state', was ? 'today' : 'none');
+                    })
+                    .then(function () {
+                        delete chip.dataset.busy;
+                        chip.classList.remove('is-pending');
+                    });
+            };
+            send();
+        });
+    }
+
+    // -- assign a team to an unassigned kid (writes to MinistryPlatform) --------
+    function initAssignDialog() {
+        var dialog = document.getElementById('assign-dialog');
+        if (!dialog || typeof dialog.showModal !== 'function') return;
+        var current = null;
+        var picked = null;
+        var confirmBtn = dialog.querySelector('[data-assign-confirm]');
+        document.addEventListener('click', function (event) {
+            var open = event.target.closest('[data-assign]');
+            if (open) {
+                event.preventDefault();
+                current = open.closest('[data-assign-url]');
+                picked = null;
+                dialog.querySelector('[data-assign-name]').textContent = current.getAttribute('data-name');
+                dialog.querySelectorAll('[data-team]').forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = 'Assign';
+                dialog.showModal();
+                return;
+            }
+            var teamBtn = event.target.closest('#assign-dialog [data-team]');
+            if (teamBtn) {
+                picked = teamBtn.getAttribute('data-team');
+                dialog.querySelectorAll('[data-team]').forEach(function (b) {
+                    b.setAttribute('aria-pressed', b === teamBtn ? 'true' : 'false');
+                });
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Assign to ' + picked;
+                return;
+            }
+            if (event.target.closest('[data-assign-cancel]')) {
+                dialog.close();
+                return;
+            }
+            if (event.target === dialog) {
+                // Only a tap on the backdrop (outside the sheet) closes it, not a tap on the sheet's padding.
+                var r = dialog.getBoundingClientRect();
+                var inside = event.clientX >= r.left && event.clientX <= r.right &&
+                             event.clientY >= r.top && event.clientY <= r.bottom;
+                if (!inside) dialog.close();
+                return;
+            }
+            if (event.target.closest('[data-assign-confirm]') && picked && current) {
+                var row = current;
+                var name = row.getAttribute('data-name');
+                dialog.close();
+                row.classList.add('is-moving');
+                post(row.getAttribute('data-assign-url'), { team: picked }, { silent: true, what: 'the team' })
+                    .then(function (data) {
+                        toast(name + ' is on ' + data.kid.team + ' now');
+                        row.remove();
+                        setTimeout(function () { location.reload(); }, 1200);   // counts and pills
+                    })
+                    .catch(function (e) {
+                        row.classList.remove('is-moving');
+                        var res = e.result || {};
+                        if (res.data && res.data.error === 'already_assigned') {
+                            toast(name + ' is already on ' + (res.data.team || 'a team'));
+                            row.remove();
+                            setTimeout(function () { location.reload(); }, 1200);
+                        } else {
+                            handleFailure(res, 'the team');
+                        }
+                    });
+            }
+        });
+    }
+
+    // -- "Show all" without a page reload ---------------------------------------
+    function initShowAll() {
+        document.addEventListener('click', function (event) {
+            var toggle = event.target.closest('[data-show-all-toggle]');
+            if (!toggle) return;
+            var list = document.querySelector('[data-kid-list]');
+            if (!list) return;
+            event.preventDefault();
+            var on = !list.classList.contains('show-all');
+            list.classList.toggle('show-all', on);
+            document.querySelectorAll('[data-show-all-toggle]').forEach(function (t) {
+                t.classList.toggle('is-on', on);
+                if (t.getAttribute('role') === 'button') t.setAttribute('aria-pressed', on ? 'true' : 'false');
+                var h = new URL(t.href, location.href);
+                if (on) h.searchParams.delete('show'); else h.searchParams.set('show', 'all');
+                t.href = h.pathname + h.search;
+                t.textContent = on ? (t.getAttribute('data-on-label') || 'Here only')
+                                   : (t.getAttribute('data-off-label') || 'Show all');
+            });
+            var url = new URL(location.href);
+            if (on) url.searchParams.set('show', 'all'); else url.searchParams.delete('show');
+            url.searchParams.delete('refresh');
+            history.replaceState(null, '', url);
+            document.querySelectorAll('.refresh-btn').forEach(function (a) {
+                var r = new URL(a.href, location.href);
+                if (on) r.searchParams.set('show', 'all'); else r.searchParams.delete('show');
+                a.href = r.pathname + r.search;
+            });
+        });
+    }
+
+    // Live pages restored from the back/forward cache after a while: reload so check-ins are current.
+    window.addEventListener('pageshow', function (event) {
+        if (event.persisted && document.body.hasAttribute('data-live')) {
+            var loaded = Number(document.body.getAttribute('data-loaded') || 0);
+            if (Date.now() - loaded > 60000) location.reload();
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', function () {
+        document.body.setAttribute('data-loaded', String(Date.now()));
+        initJsonForms();
+        var current = document.querySelector('.team-switcher .is-current');
+        if (current && current.scrollIntoView) current.scrollIntoView({ inline: 'center', block: 'nearest' });
+    });
+    initAttendanceChips();
+    initMarkPresent();
+    initCreditChips();
+    initShowAll();
+    document.addEventListener('DOMContentLoaded', initAssignDialog);
 
     window.tnt = { post: post, toast: toast, csrfToken: csrfToken, handleFailure: handleFailure };
 })();

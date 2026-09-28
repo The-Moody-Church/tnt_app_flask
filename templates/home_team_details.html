@@ -1,14 +1,17 @@
 {% set show_header = true %}
 {% set page_title = team_name|team_title %}
 {% set back_url = url_for('home_details', date_str=date_str) %}
+{% from "_macros.html" import date_line, team_switcher %}
 {% extends "base.html" %}
 
 {% block title %}TNT Reading Teams Tracker - {{ team_name }} Team{% endblock %}
 
+{% block body_attrs %} data-live{% endblock %}
+
 {% block content %}
-<div class="page-header">
-    <div class="team-badge {{ team_name|lower }}">{{ team_name|team_title }}</div>
-    <h1>{{ day_data.meeting_date|date_display }}</h1>
+{{ date_line(day_data, is_tonight, url_for('home', all=1)) }}
+{{ team_switcher('home_team_details', date_str, team_name, teams) }}
+<div class="page-header page-header--compact">
     <p class="subtitle">{{ day_data.theme }}</p>
 </div>
 

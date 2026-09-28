@@ -23,7 +23,7 @@
     {% if current_user %}<meta name="csrf-token" content="{{ csrf_token() }}">{% endif %}
     {% block extra_css %}{% endblock %}
 </head>
-<body>
+<body{% block body_attrs %}{% endblock %}>
     {% if show_header %}
     <header class="mobile-header">
         {% if back_url %}
@@ -35,8 +35,6 @@
         <div class="header-action">{% block header_action %}{% if current_user %}<a class="account-avatar" href="{{ url_for('auth.account') }}" aria-label="Account: {{ current_user.name }}">{{ current_user.initials }}</a>{% endif %}{% endblock %}</div>
     </header>
     {% endif %}
-    {% include "_qa_ribbon.html" %}
-    
     <nav class="nav-tabs">
         <a href="/" {% if request.path.startswith('/home') or request.path == '/' %}class="active"{% endif %}>
             <span class="nav-icon">🏠</span>
@@ -53,6 +51,7 @@
     </nav>
 
     <main class="main-content{% if show_header %} with-header{% endif %}">
+        {% include "_qa_ribbon.html" %}
         {% block content %}{% endblock %}
     </main>
 

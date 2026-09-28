@@ -15,7 +15,7 @@ def data(seeded):
 
 
 PAGES = [
-    '/', '/attendance', '/progress',
+    '/?all=1', '/attendance?all=1', '/progress', '/account',
     '/home/2026-09-23', '/home/2026-09-23/team/Red', '/home/2026-09-23/team/Red/record_section',
     '/home/2026-09-23/team/Red/record_section?show=all',
     '/home/2026-09-23/team/Red/record_section/kid/1001',
@@ -24,7 +24,7 @@ PAGES = [
     '/home/2026-09-23/team/Red/kid/1001/section/1.2',
     '/attendance/2026-09-23', '/attendance/2026-09-23/team/Red', '/attendance/2026-09-23/team/Red?show=all',
     '/attendance/2026-09-23/team/Unassigned', '/attendance/2026-09-23/team/Red/kid/1001',
-    '/attendance/2026-09-23/team/Red/kid/1002', '/attendance/2026-09-23/team/Blue/checkin/1003',
+    '/attendance/2026-09-23/team/Red/kid/1002', '/attendance/2026-09-23/team/Blue/kid/1003',
     '/progress/student/1001', '/progress/student/1001/section/1.2', '/progress/student/1001/record/2',
     '/progress/student/1008', '/home/2026-09-30/team/Red/record_section/kid/1001/section/1.3',
 ]

@@ -20,10 +20,12 @@
 {% macro summary_bar(here_count, absent_count, show_all, sync, base_url) -%}
 <div class="summary-bar">
     <div class="summary-counts"><strong>{{ here_count }}</strong> here · <strong>{{ absent_count }}</strong> not checked in</div>
+    {% if absent_count %}
     {% if show_all %}
-    <a class="filter-toggle is-on" href="{{ base_url }}">Here only</a>
+    <a class="filter-toggle is-on" href="{{ base_url }}" data-show-all-toggle role="button" aria-pressed="true">Here only</a>
     {% else %}
-    <a class="filter-toggle" href="{{ base_url }}?show=all">Show all</a>
+    <a class="filter-toggle" href="{{ base_url }}?show=all" data-show-all-toggle role="button" aria-pressed="false">Show all</a>
+    {% endif %}
     {% endif %}
 </div>
 {{ sync_note(sync, base_url ~ ('?show=all&refresh=1' if show_all else '?refresh=1')) }}
@@ -33,4 +35,32 @@
 {% if kid.source == 'mp' %}✓ Checked in{% if kid.mp_time %} · {{ kid.mp_time|time_short }}{% endif %}
 {% elif kid.source == 'manual' %}✋ Marked present{% if kid.manual_present_by %} by {{ kid.manual_present_by }}{% endif %}
 {% else %}Not checked in{% endif %}
+{%- endmacro %}
+
+{% macro date_line(day, is_tonight, all_dates_url) -%}
+<div class="date-line">
+    <span class="date-line__when">{% if is_tonight %}<strong>Tonight</strong> · {% endif %}{{ day.meeting_date|date_to_long }}</span>
+    <a class="date-line__all" href="{{ all_dates_url }}">All dates</a>
+</div>
+{%- endmacro %}
+
+{% macro team_switcher(endpoint, date_str, current, teams, counts=None, include_unassigned=False) -%}
+<nav class="team-switcher" aria-label="Teams">
+    {% for t in teams %}
+    <a class="team-pill {{ t.name|lower }}{% if t.name == current %} is-current{% endif %}"
+       href="{{ url_for(endpoint, date_str=date_str, team_name=t.name) }}"
+       {% if t.name == current %}aria-current="page"{% endif %}>{{ t.name }}{% if counts and counts.get(t.name) %} <span class="team-pill__count">{{ counts[t.name].here }}</span>{% endif %}</a>
+    {% endfor %}
+    {% if include_unassigned and counts and counts.get(None) and counts[None].total %}
+    <a class="team-pill unassigned{% if current == 'Unassigned' %} is-current{% endif %}"
+       href="{{ url_for(endpoint, date_str=date_str, team_name='Unassigned') }}"
+       {% if current == 'Unassigned' %}aria-current="page"{% endif %}>Unassigned <span class="team-pill__count">{{ counts[None].here }}</span></a>
+    {% endif %}
+</nav>
+{%- endmacro %}
+
+{% macro attendance_chip(kid, field, label, writable) -%}
+<button type="button" class="chip-toggle" data-field="{{ field }}" data-label="{{ label }}"
+        aria-pressed="{{ 'true' if kid[field] else 'false' }}"
+        {% if not writable or (not kid.present and not kid[field]) %}disabled{% endif %}>{{ label }}</button>
 {%- endmacro %}

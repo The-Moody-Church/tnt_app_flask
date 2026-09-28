@@ -1,68 +1,92 @@
-{% from "_macros.html" import summary_bar, present_label %}
+{% from "_macros.html" import summary_bar, present_label, date_line, team_switcher, attendance_chip %}
 {% set show_header = true %}
-{% set page_title = team_name + (" Team" if not is_unassigned else "") %}
+{% set page_title = team_name|team_title %}
 {% set back_url = url_for('attendance_details', date_str=date_str) %}
 {% extends "base.html" %}
 
-{% block title %}TNT Reading Teams Tracker - {{ team_name }}{% endblock %}
-
-{% macro chip(label, value) %}
-{% if value %}
-<span style="background:#e8f5e9; color:#2e7d32; font-size:0.68em; font-weight:600; padding:2px 7px; border-radius:8px; white-space:nowrap;">{{ label }}</span>
-{% else %}
-<span style="background:#f0f0f0; color:#bbb; font-size:0.68em; padding:2px 7px; border-radius:8px; white-space:nowrap;">{{ label }}</span>
-{% endif %}
-{% endmacro %}
+{% block title %}TNT Reading Teams Tracker - {{ team_name|team_title }}{% endblock %}
+{% block body_attrs %} data-live{% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <div class="team-badge {{ team_name|lower }}">{{ team_name }}{% if not is_unassigned %} Team{% endif %}</div>
-    <h1>{{ day_data.meeting_date|date_display }}</h1>
-    <p class="subtitle">{{ day_data.theme }}</p>
-</div>
+{{ date_line(day_data, is_tonight, url_for('attendance', all=1)) }}
+{{ team_switcher('team_attendance_details', date_str, team_name, teams, counts, include_unassigned=True) }}
 
 {% if unassigned_here %}
 <a class="banner-warning" href="{{ url_for('team_attendance_details', date_str=date_str, team_name='Unassigned') }}">
     ⚠ {{ unassigned_here }} checked-in kid{{ 's have' if unassigned_here != 1 else ' has' }} no team →
 </a>
 {% endif %}
+{% if is_unassigned %}
+<p class="kid-note">These kids aren’t on a team in MinistryPlatform yet, so their points don’t count for any team.
+   {% if can_assign %}Tap <strong>Assign team</strong> to set one.{% else %}Ask staff to set a team in MinistryPlatform.{% endif %}</p>
+{% endif %}
 
 {{ summary_bar(here|length, absent|length, show_all, sync, url_for('team_attendance_details', date_str=date_str, team_name=team_name)) }}
 
-<div class="kids-list">
-    <h3>Here</h3>
-    <div class="kids-grid">
+<div class="kid-board{% if show_all %} show-all{% endif %}" data-kid-list>
+    <ul class="kid-list">
         {% for kid in here %}
-        <a class="section-row" href="{{ url_for('kid_attendance_details', date_str=date_str, team_name=team_name, contact_id=kid.contact_id) }}">
-            <div style="flex:1; min-width:0;">
-                <span class="section-name">{{ kid.name }}</span>
-                <span class="kid-status{% if kid.source == 'manual' %} is-manual{% endif %}">{{ present_label(kid) }}</span>
-                <div style="margin-top:6px; display:flex; gap:4px; flex-wrap:nowrap; overflow:hidden;">
-                    {% for field, short, _ in flags %}{{ chip(short, kid[field]) }}{% endfor %}
-                </div>
+        <li class="kid-row" data-name="{{ kid.name }}"
+            data-url="{{ url_for('api_attendance_set', date_str=date_str, contact_id=kid.contact_id) }}"
+            {% if is_unassigned and can_assign %}data-assign-url="{{ url_for('api_assign_team', contact_id=kid.contact_id) }}"{% endif %}>
+            <a class="kid-row__link" href="{{ url_for('kid_attendance_details', date_str=date_str, team_name=team_name, contact_id=kid.contact_id) }}">
+                <span class="kid-row__name">{{ kid.name }}
+                    <span class="kid-status{% if kid.source == 'manual' %} is-manual{% endif %}">{{ present_label(kid) }}</span>
+                </span>
+                <span class="arrow-icon">→</span>
+            </a>
+            <div class="chip-row" role="group" aria-label="Attendance for {{ kid.name }}">
+                {% for field, short, _ in flags %}{{ attendance_chip(kid, field, short, writable) }}{% endfor %}
             </div>
-            <span class="arrow-icon">→</span>
-        </a>
+            {% if is_unassigned and can_assign and writable %}
+            <button type="button" class="assign-btn" data-assign>Assign team</button>
+            {% endif %}
+        </li>
         {% else %}
-        <p class="empty-note">No one {% if not is_unassigned %}from {{ team_name }} {% endif %}is checked in yet. Check-ins show up here as families check in at the kiosk.</p>
+        <li class="empty-note">{% if day_data.meeting_date < today %}No one {% if not is_unassigned %}from {{ team_name }} {% endif %}was checked in.
+            {% else %}No one {% if not is_unassigned %}from {{ team_name }} {% endif %}is checked in yet.
+            Check-ins show up here as families check in at the kiosk.{% endif %}
+            {% if absent %}<br><a class="filter-link" href="?show=all" data-show-all-toggle
+               data-off-label="Show all {{ absent|length }}" data-on-label="Here only">{{ 'Here only' if show_all else 'Show all ' ~ absent|length }}</a>{% endif %}</li>
         {% endfor %}
+    </ul>
+
+    {% if absent %}
+    <div class="absent-group">
+        <p class="group-label">Not checked in ({{ absent|length }})</p>
+        <ul class="kid-list">
+            {% for kid in absent %}
+            <li class="kid-row is-absent" data-name="{{ kid.name }}"
+                data-url="{{ url_for('api_attendance_set', date_str=date_str, contact_id=kid.contact_id) }}"
+                {% if is_unassigned and can_assign %}data-assign-url="{{ url_for('api_assign_team', contact_id=kid.contact_id) }}"{% endif %}>
+                <a class="kid-row__link" href="{{ url_for('kid_attendance_details', date_str=date_str, team_name=team_name, contact_id=kid.contact_id) }}">
+                    <span class="kid-row__name">{{ kid.name }}<span class="kid-status">Not checked in</span></span>
+                    <span class="arrow-icon">→</span>
+                </a>
+                {% if writable %}
+                <button type="button" class="mark-present" data-mark-present="on">Mark present</button>
+                {% if is_unassigned and can_assign %}<button type="button" class="assign-btn" data-assign>Assign team</button>{% endif %}
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
     </div>
+    {% endif %}
 </div>
 
-{% if show_all and absent %}
-<div class="kids-list">
-    <h3>Not checked in ({{ absent|length }})</h3>
-    <div class="kids-grid">
-        {% for kid in absent %}
-        <a class="section-row is-absent" href="{{ url_for('checkin_form_for_kid', date_str=date_str, team_name=team_name, contact_id=kid.contact_id) }}">
-            <div style="flex:1; min-width:0;">
-                <span class="section-name">{{ kid.name }}</span>
-                <div style="margin-top:4px; font-size:0.78em; color:#999;">{% if writable %}Tap to mark present{% else %}Not checked in{% endif %}</div>
-            </div>
-            <span class="arrow-icon">→</span>
-        </a>
+{% if is_unassigned and can_assign %}
+<dialog id="assign-dialog" class="sheet" aria-labelledby="assign-title">
+    <h2 id="assign-title">Assign <span data-assign-name></span> to a team</h2>
+    <div class="assign-grid">
+        {% for t in assign_teams %}
+        <button type="button" class="assign-team-btn {{ t|lower }}" data-team="{{ t }}" aria-pressed="false">{{ t }}</button>
         {% endfor %}
     </div>
-</div>
+    <p class="sheet-note">Saves to MinistryPlatform — check-in and other leaders will see it.</p>
+    <div class="sheet-actions">
+        <button type="button" class="submit-button" data-assign-confirm disabled>Assign</button>
+        <button type="button" class="cancel-button" data-assign-cancel>Cancel</button>
+    </div>
+</dialog>
 {% endif %}
 {% endblock %}
