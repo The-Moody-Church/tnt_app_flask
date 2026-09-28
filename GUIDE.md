@@ -1,73 +1,68 @@
-# TNT Tracker — User Guide
+# TNT Tracker — Leader Guide
 
-A mobile-friendly web app for tracking T&T reading section completions and attendance.
+The app for recording T&T attendance and completed sections on club night.
 
 ---
 
-## Installing on Your Phone
+## Install it on your phone
 
 ### iPhone / iPad (Safari)
 
-1. Open the app URL in **Safari** (must be Safari, not Chrome)
-2. Tap the **Share** button (box with arrow pointing up) at the bottom of the screen
-3. Scroll down and tap **Add to Home Screen**
-4. Give it a name (e.g. "TNT Tracker") and tap **Add**
-
-The app will appear on your home screen and open full-screen without the browser bar.
+1. Open the app link in **Safari**.
+2. Tap **Share** (the square with an arrow), then **Add to Home Screen**, then **Add**.
+3. Open it from your home screen and **sign in once inside the app**. The home-screen app keeps its own sign-in,
+   separate from Safari.
 
 ### Android (Chrome)
 
-1. Open the app URL in **Chrome**
-2. Tap the **three-dot menu** (⋮) in the top right
-3. Tap **Add to Home screen** (or "Install app" on newer Android)
-4. Tap **Add**
+1. Open the app link in **Chrome**.
+2. Tap **⋮**, then **Add to Home screen** (or **Install app**).
 
-The app will appear on your home screen and open full-screen.
+## Signing in
 
----
+Tap **Sign in with MinistryPlatform** and use your MP login. You stay signed in for weeks.
 
-## Using the App
-
-### Home Tab — Record Completed Sections
-
-Use this to record what a kid completed during a T&T meeting.
-
-1. Tap a date from the schedule (today's date is highlighted)
-2. Tap a team
-3. Tap **Record Section**
-4. Tap the kid's name
-5. Tap the section they completed
-6. Toggle on the credits earned (Main, Silver, Gold)
-7. Tap **Submit**
-
-**Notes:**
-- Credits already recorded for a section are shown at the top and can't be toggled — they're locked in
-- You can come back to the same kid/section to add more credits later (e.g. add Silver after recording Main)
-- The Submit button is greyed out until at least one toggle is on
-
-### Attendance Tab — Check Kids In
-
-Use this to record attendance for a meeting.
-
-1. Tap a date
-2. Tap a team
-3. The full roster appears — checked-in kids show as chips, unchecked kids show as dashed rows
-4. Tap an unchecked kid to check them in
-5. Fill in any details and tap **Submit**
-6. Tap a checked-in kid to edit their attendance record
-
-### Progress Tab — View a Student's Record
-
-Use this to see all completed sections for a specific student.
-
-1. Search for a student by name
-2. Tap a section to see all recorded credits across all dates
-3. Tap a specific record to edit it (useful for correcting mistakes)
+- **No MP login yet?** Ask the Awana director to set one up for your leader record. Please don't create a new
+  account yourself; it won't be linked to the T&T Leaders list.
+- **"Not on the T&T Leaders list"?** Show the director the name and numbers on that page so they can fix it.
 
 ---
 
-## Tips
+## On club night
 
-- The app remembers the current date and scrolls to it automatically on the Home tab
-- All changes save directly to Google Sheets — give it a moment after submitting
-- If something looks out of date, wait 30 seconds and refresh — the app caches data briefly for speed
+Open the app and it goes **straight to tonight's page for the team you last used**. The pills at the top switch
+teams, and **All dates** shows the whole schedule.
+
+### Attendance
+
+- The list shows only kids **checked in at the kiosk**. The bar at the top says, for example,
+  "14 here · 5 not checked in".
+- **Tap the Bible / Shirt / Book / HW / Dues chips** on a kid's row. Each tap saves right away, and a green ✓
+  means it's recorded. Tap again to undo.
+- Someone's here but wasn't checked in? Tap **Show all**, find them under "Not checked in", and tap
+  **Mark present**. Their chips then turn on.
+- Kids show up as families check in. Tap **↻** to refresh.
+- **Unassigned** means the kid has no team yet (usually a walk-in). Their points don't count for any team until
+  they have one.
+  - Tap **Assign team** and pick one. This saves the team in MinistryPlatform for everyone.
+
+### Record a completed section
+
+1. Pick your team, tap **Record a Completed Section**, then tap the kid.
+2. **Tonight's section is at the top.** Tap **Main**, **🥈 Silver** or **🥇 Gold**. Each tap saves; tap again to
+   undo tonight's tap.
+3. A credit earned on an earlier night shows "✓ 9/16" and can't be tapped.
+4. For any other section, tap it in the list below and use the form.
+
+### If something doesn't save
+
+- A **red message** means that change was **not saved**. Try again.
+- **"Your sign-in expired"** means sign in again, then redo the last change.
+- **"Can't reach MinistryPlatform"** means check-ins may be a few minutes old. You can keep recording; your taps
+  still save.
+
+---
+
+## Progress tab
+
+Search for any kid to see every section they've completed, with Silver and Gold, across all nights.
