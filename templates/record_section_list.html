@@ -1,6 +1,6 @@
 {% set show_header = true %}
-{% set page_title = kid_name %}
-{% set back_url = "/home/" + date_str + "/team/" + team_name + "/record_section" %}
+{% set page_title = kid.name %}
+{% set back_url = url_for('record_section_kid_picker', date_str=date_str, team_name=team_name) %}
 {% extends "fullscreen_base.html" %}
 
 {% block title %}TNT Reading Teams Tracker - Select Section{% endblock %}
@@ -8,16 +8,16 @@
 {% block content %}
 <div class="form-container">
     <div class="form-header">
-        <div class="team-badge {{ team_name|lower }}">{{ team_name }} Team</div>
-        <h2>{{ kid_name }}</h2>
-        <p class="subtitle">{{ day_data.Date }} — tap a section to record</p>
+        <div class="team-badge {{ team_name|lower }}">{{ team_name|team_title }}</div>
+        <h2>{{ kid.name }}</h2>
+        <p class="subtitle">{{ day_data.meeting_date|date_display }} — tap a section to record</p>
     </div>
 
     <div class="kids-list">
         {% for item in sections %}
         {% set all_done = item.main_date and item.silver and item.gold %}
-        <div class="section-row {% if all_done %}complete{% endif %}"
-             onclick="window.location.href='/home/{{ date_str }}/team/{{ team_name }}/record_section/kid/{{ kid_name|urlencode }}/section/{{ item.section|urlencode }}'">
+        <a class="section-row {% if all_done %}complete{% endif %}"
+           href="{{ url_for('record_section_form', date_str=date_str, team_name=team_name, contact_id=kid.contact_id, section=item.section) }}">
             <div style="flex:1; min-width:0;">
                 <span class="section-name">{{ item.section }}</span>
                 <div style="margin-top:6px; display:flex; gap:5px; flex-wrap:nowrap;">
@@ -40,7 +40,7 @@
             </div>
             {% if all_done %}<span style="font-size:1.1em; margin-right:4px;">🏆</span>{% endif %}
             <span class="arrow-icon">→</span>
-        </div>
+        </a>
         {% endfor %}
     </div>
 </div>

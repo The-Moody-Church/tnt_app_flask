@@ -3,6 +3,7 @@
 <head>
     <title>{% block title %}TNT Reading Teams Tracker{% endblock %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#72253D">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="TNT Tracker">
@@ -11,20 +12,25 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v={{ config.ASSET_VERSION }}">
     {% block extra_css %}{% endblock %}
 </head>
 <body class="fullscreen-body">
     {% if show_header %}
     <header class="mobile-header">
-        <button class="back-btn" onclick="{% if back_url %}window.location.href='{{ back_url }}'{% else %}history.back(){% endif %}">←</button>
+        {% if back_url %}
+        <a class="back-btn" href="{{ back_url }}">←</a>
+        {% else %}
+        <button type="button" class="back-btn" onclick="history.back()">←</button>
+        {% endif %}
         <h1 class="header-title">{{ page_title or 'TNT Tracker' }}</h1>
-        <div class="header-action">{{ header_action|safe if header_action else '' }}</div>
+        <div class="header-action">{% block header_action %}{% endblock %}</div>
     </header>
     <div class="fullscreen-content with-header">
     {% else %}
     <div class="fullscreen-content">
     {% endif %}
+        {% include "_qa_ribbon.html" %}
         {% block content %}{% endblock %}
     </div>
     <script>

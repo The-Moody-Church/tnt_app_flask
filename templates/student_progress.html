@@ -1,20 +1,15 @@
 {% set show_header = true %}
-{% set page_title = student_name %}
-{% set back_url = "/progress" %}
+{% set page_title = kid.name %}
+{% set back_url = url_for('progress') %}
 {% extends "base.html" %}
 
-{% block title %}TNT Reading Teams Tracker - {{ student_name }} Progress{% endblock %}
+{% block title %}TNT Reading Teams Tracker - {{ kid.name }} Progress{% endblock %}
 
 {% block content %}
-<a href="/progress" class="back-button">
-    ← Back to Progress Lookup
-</a>
-
 <div class="page-header">
-    {% if student_info %}
-    <div class="team-badge {{ student_info.Group|lower }}">{{ student_info.Group }} Team</div>
-    {% endif %}
-    <h1>{{ student_name }}</h1>
+    {% set kid_team = kid.team or 'Unassigned' %}
+    <div class="team-badge {{ kid_team|lower }}">{{ kid_team }}{% if kid.team %} Team{% endif %}</div>
+    <h1>{{ kid.name }}</h1>
     <p class="subtitle">Progress Summary</p>
 </div>
 
@@ -42,8 +37,8 @@
     <div class="kids-grid">
         {% for item in coalesced_sections %}
         {% set all_done = item.main_date and item.silver_date and item.gold_date %}
-        <div class="section-row {% if all_done %}complete{% endif %}"
-             onclick="window.location.href='/progress/student/{{ student_name|urlencode }}/section/{{ item.section|urlencode }}'">
+        <a class="section-row {% if all_done %}complete{% endif %}"
+           href="{{ url_for('student_section_log', contact_id=kid.contact_id, section=item.section) }}">
             <div style="flex:1; min-width:0;">
                 <span class="section-name">Section {{ item.section }}</span>
                 <div style="margin-top:6px; display:flex; gap:5px; flex-wrap:nowrap;">
@@ -66,12 +61,12 @@
             </div>
             {% if all_done %}<span style="font-size:1.1em; margin-right:4px;">🏆</span>{% endif %}
             <span class="arrow-icon">→</span>
-        </div>
+        </a>
         {% endfor %}
     </div>
     {% else %}
     <div class="no-kids">
-        <p>No completed sections found for {{ student_name }}.</p>
+        <p>No completed sections found for {{ kid.name }}.</p>
     </div>
     {% endif %}
 </div>

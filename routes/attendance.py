@@ -1,19 +1,9 @@
-from flask import render_template, request, redirect, url_for
-from urllib.parse import unquote
+from flask import abort, redirect, render_template, request, url_for
 
-from models.data import (
-    get_schedule,
-    get_attendance_totals,
-    get_attendance_entries,
-    get_roster,
-    insert_attendance_entry,
-    update_attendance_entry,
-)
-from models.fields import (
-    NAME, TEAM, DATE, GROUP,
-    PRESENT, HAS_BIBLE, WEARING_SHIRT, HAS_BOOK, DID_HOMEWORK, HAS_DUES,
-)
-from models.utils import dates_match, find_day_by_date, url_to_date, find_closest_date_url
+from models import data
+from models.fields import ATTENDANCE_FLAG_COLUMNS, ATTENDANCE_FLAGS, bools_from_form, team_label
+from models.utils import find_closest_date
+from routes._common import form_date, form_int, live_sync, require_writable, resolve_day, resolve_team, show_all_requested
 
 
 def register_attendance_routes(app):
@@ -21,201 +11,75 @@ def register_attendance_routes(app):
 
     @app.route('/attendance')
     def attendance():
-        try:
-            schedule_data = get_schedule()
-            closest = find_closest_date_url(schedule_data)
-            return render_template('attendance.html', schedule_data=schedule_data, closest_date_str=closest)
-        except Exception as e:
-            return render_template('attendance.html', schedule_data=[], error=str(e))
+        schedule_data = data.get_schedule()
+        return render_template('attendance.html', schedule_data=schedule_data,
+                               closest_date=find_closest_date(schedule_data))
 
     @app.route('/attendance/<date_str>')
     def attendance_details(date_str):
-        try:
-            schedule_data = get_schedule()
-
-            display_date = url_to_date(date_str)
-            day_data = find_day_by_date(schedule_data, display_date)
-
-            if day_data:
-                all_totals = get_attendance_totals()
-                date_totals = [row for row in all_totals if row.get(DATE) == day_data.get(DATE)]
-
-                return render_template('attendance_details.html',
-                                     day_data=day_data,
-                                     date_str=date_str,
-                                     weekly_totals=date_totals)
-            else:
-                return redirect(url_for('attendance'))
-        except Exception as e:
-            return redirect(url_for('attendance'))
+        d, day = resolve_day(date_str, 'attendance')
+        sync = live_sync(d)
+        counts = data.get_board_counts(d)
+        return render_template('attendance_details.html', day_data=day, date_str=date_str, sync=sync,
+                               weekly_totals=data.get_attendance_totals(d),
+                               unassigned=counts.get(None, {'here': 0, 'total': 0}))
 
     @app.route('/attendance/<date_str>/team/<team_name>')
     def team_attendance_details(date_str, team_name):
-        try:
-            schedule_data = get_schedule()
+        d, day = resolve_day(date_str, 'attendance')
+        team = resolve_team(team_name, allow_unassigned=True,
+                            on_fail=url_for('attendance_details', date_str=date_str))
+        sync = live_sync(d, force=request.args.get('refresh') == '1')
+        board = data.get_board(d, team)
+        counts = data.get_board_counts(d)
+        return render_template('team_attendance_details.html', day_data=day, date_str=date_str,
+                               team_name=team_label(team), is_unassigned=team is None,
+                               here=[k for k in board if k['present']],
+                               absent=[k for k in board if not k['present']],
+                               unassigned_here=counts.get(None, {}).get('here', 0) if team else 0,
+                               show_all=show_all_requested(), sync=sync, flags=ATTENDANCE_FLAGS,
+                               writable=data.is_writable_date(d))
 
-            display_date = url_to_date(date_str)
-            day_data = find_day_by_date(schedule_data, display_date)
+    @app.route('/attendance/<date_str>/team/<team_name>/kid/<int:contact_id>')
+    def kid_attendance_details(date_str, team_name, contact_id):
+        d, day = resolve_day(date_str, 'attendance')
+        team = resolve_team(team_name, allow_unassigned=True,
+                            on_fail=url_for('attendance_details', date_str=date_str))
+        kid = data.get_attendance(contact_id=contact_id, meeting_date=d) or abort(404)
+        return render_template('kid_attendance_details.html', day_data=day, date_str=date_str,
+                               team_name=team_label(team), kid=kid, flags=ATTENDANCE_FLAGS,
+                               writable=data.is_writable_date(d))
 
-            if day_data:
-                all_totals = get_attendance_totals()
-
-                team_data = next((row for row in all_totals
-                                if row.get(DATE) == day_data.get(DATE)
-                                and row.get(TEAM, '').lower() == team_name.lower()), None)
-
-                all_entries = get_attendance_entries()
-                checked_in = {
-                    entry.get(NAME, '').lower(): entry
-                    for entry in all_entries
-                    if dates_match(entry.get(DATE), day_data.get(DATE))
-                    and entry.get(TEAM, '').lower() == team_name.lower()
-                }
-
-                roster_data = get_roster()
-                team_kids = [row[NAME] for row in roster_data if row.get(GROUP, '').lower() == team_name.lower()]
-                kids_with_status = [
-                    {'name': kid, 'entry': checked_in.get(kid.lower())}
-                    for kid in team_kids
-                ]
-
-                return render_template('team_attendance_details.html',
-                                     day_data=day_data,
-                                     date_str=date_str,
-                                     team_data=team_data,
-                                     team_name=team_name,
-                                     kids_with_status=kids_with_status)
-            else:
-                return redirect(url_for('attendance'))
-        except Exception as e:
-            return redirect(url_for('attendance'))
-
-    @app.route('/attendance/<date_str>/team/<team_name>/kid/<path:kid_name>')
-    def kid_attendance_details(date_str, team_name, kid_name):
-        try:
-            schedule_data = get_schedule()
-
-            display_date = url_to_date(date_str)
-            day_data = find_day_by_date(schedule_data, display_date)
-
-            if day_data:
-                all_entries = get_attendance_entries()
-
-                kid_name = unquote(kid_name)
-
-                kid_entry = next((entry for entry in all_entries
-                                if dates_match(entry.get(DATE), day_data.get(DATE))
-                                and entry.get(TEAM, '').lower() == team_name.lower()
-                                and entry.get(NAME, '').lower() == kid_name.lower()), None)
-
-                return render_template('kid_attendance_details.html',
-                                     day_data=day_data,
-                                     date_str=date_str,
-                                     team_name=team_name,
-                                     kid_name=kid_name,
-                                     kid_entry=kid_entry)
-            else:
-                return redirect(url_for('attendance'))
-        except Exception as e:
-            return redirect(url_for('attendance'))
-
-    @app.route('/attendance/<date_str>/team/<team_name>/checkin/<path:kid_name>')
-    def checkin_form_for_kid(date_str, team_name, kid_name):
-        try:
-            schedule_data = get_schedule()
-            display_date = url_to_date(date_str)
-            day_data = find_day_by_date(schedule_data, display_date)
-
-            if day_data:
-                kid_name = unquote(kid_name)
-                return render_template('checkin_form.html',
-                                     day_data=day_data,
-                                     date_str=date_str,
-                                     team_name=team_name,
-                                     kid_name=kid_name)
-            else:
-                return redirect(url_for('attendance'))
-        except Exception as e:
-            return redirect(url_for('attendance'))
-
-    @app.route('/attendance/<date_str>/team/<team_name>/checkin')
-    def checkin_form(date_str, team_name):
-        try:
-            schedule_data = get_schedule()
-
-            display_date = url_to_date(date_str)
-            day_data = find_day_by_date(schedule_data, display_date)
-
-            if day_data:
-                roster_data = get_roster()
-                team_kids = [row[NAME] for row in roster_data if row.get(GROUP, '').lower() == team_name.lower()]
-
-                return render_template('checkin_form.html',
-                                     day_data=day_data,
-                                     date_str=date_str,
-                                     team_name=team_name,
-                                     team_kids=team_kids,
-                                     schedule_data=schedule_data)
-            else:
-                return redirect(url_for('attendance'))
-        except Exception as e:
-            return redirect(url_for('attendance'))
+    @app.route('/attendance/<date_str>/team/<team_name>/checkin/<int:contact_id>')
+    def checkin_form_for_kid(date_str, team_name, contact_id):
+        d, day = resolve_day(date_str, 'attendance')
+        team = resolve_team(team_name, allow_unassigned=True,
+                            on_fail=url_for('attendance_details', date_str=date_str))
+        kid = data.get_attendance(contact_id=contact_id, meeting_date=d) or abort(404)
+        return render_template('checkin_form.html', day_data=day, date_str=date_str,
+                               team_name=team_label(team), kid=kid, flags=ATTENDANCE_FLAGS,
+                               writable=data.is_writable_date(d))
 
     @app.route('/submit_checkin', methods=['POST'])
     def submit_checkin():
-        try:
-            date_str = request.form.get('date_str')
-            team = request.form.get('team')
+        """Check-in form for a kid who wasn't checked in at the kiosk: mark present + items."""
+        d = form_date()
+        require_writable(d)
+        fields = bools_from_form(request.form, ATTENDANCE_FLAG_COLUMNS)
+        if 'manual_present' in request.form:
+            fields = {'manual_present': True, **fields}
+        data.set_attendance(contact_id=form_int('contact_id'), meeting_date=d, fields=fields)
+        return redirect(url_for('team_attendance_details', date_str=d.isoformat(),
+                                team_name=request.form.get('team') or 'Unassigned'))
 
-            insert_attendance_entry({
-                NAME: request.form.get('name'),
-                TEAM: team,
-                DATE: request.form.get('date'),
-                PRESENT: 'present' in request.form,
-                HAS_BIBLE: 'has_bible' in request.form,
-                WEARING_SHIRT: 'wearing_shirt' in request.form,
-                HAS_BOOK: 'has_book' in request.form,
-                DID_HOMEWORK: 'did_homework' in request.form,
-                HAS_DUES: 'has_dues' in request.form,
-            })
-
-            return redirect(f'/attendance/{date_str}/team/{team}')
-        except Exception as e:
-            return redirect(url_for('attendance'))
-
-    @app.route('/edit_attendance', methods=['GET', 'POST'])
+    @app.route('/edit_attendance', methods=['POST'])
     def edit_kid_attendance():
-        if request.method == 'GET':
-            return redirect(url_for('attendance'))
-
-        try:
-            date_str = request.form.get('date_str')
-            team_name = request.form.get('team_name')
-            kid_name = request.form.get('kid_name')
-
-            schedule_data = get_schedule()
-            display_date = url_to_date(date_str)
-            day_data = find_day_by_date(schedule_data, display_date)
-
-            if day_data:
-                entry_date = day_data.get(DATE)
-
-                update_attendance_entry(
-                    lambda row: (dates_match(row.get(DATE), entry_date)
-                                and row.get(TEAM, '').lower() == team_name.lower()
-                                and row.get(NAME, '').lower() == kid_name.lower()),
-                    {
-                        PRESENT: 'TRUE' if PRESENT in request.form else 'FALSE',
-                        HAS_BIBLE: 'TRUE' if HAS_BIBLE in request.form else 'FALSE',
-                        WEARING_SHIRT: 'TRUE' if WEARING_SHIRT in request.form else 'FALSE',
-                        HAS_BOOK: 'TRUE' if HAS_BOOK in request.form else 'FALSE',
-                        DID_HOMEWORK: 'TRUE' if DID_HOMEWORK in request.form else 'FALSE',
-                        HAS_DUES: 'TRUE' if HAS_DUES in request.form else 'FALSE',
-                    }
-                )
-
-                return redirect(f'/attendance/{date_str}/team/{team_name}/kid/{kid_name}')
-
-            return redirect(url_for('attendance'))
-        except Exception as e:
-            return redirect(url_for('attendance'))
+        d = form_date()
+        require_writable(d)
+        contact_id = form_int('contact_id')
+        fields = bools_from_form(request.form, ATTENDANCE_FLAG_COLUMNS)
+        if request.form.get('can_mark_present') == '1':
+            fields['manual_present'] = 'manual_present' in request.form
+        data.set_attendance(contact_id=contact_id, meeting_date=d, fields=fields)
+        return redirect(url_for('kid_attendance_details', date_str=d.isoformat(),
+                                team_name=request.form.get('team_name') or 'Unassigned', contact_id=contact_id))

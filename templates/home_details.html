@@ -1,18 +1,15 @@
+{% from "_macros.html" import sync_note %}
 {% set show_header = true %}
-{% set page_title = day_data.Date %}
-{% set back_url = "/" %}
+{% set page_title = day_data.meeting_date|date_display %}
+{% set back_url = url_for('home') %}
 {% extends "base.html" %}
 
-{% block title %}TNT Reading Teams Tracker - {{ day_data.Date }}{% endblock %}
+{% block title %}TNT Reading Teams Tracker - {{ day_data.meeting_date|date_display }}{% endblock %}
 
 {% block content %}
-<a href="/" class="back-button">
-    ← Back to Home
-</a>
-
 <div class="page-header">
-    <h1>{{ day_data.Date }}</h1>
-    <p class="subtitle">{{ day_data.Theme }}</p>
+    <h1>{{ day_data.meeting_date|date_display }}</h1>
+    <p class="subtitle">{{ day_data.theme }}</p>
 </div>
 
 <div class="attendance-section">
@@ -20,16 +17,16 @@
     {% if weekly_totals %}
     <div class="teams-grid">
         {% for team_data in weekly_totals %}
-        <div class="team-card" onclick="window.location.href='/home/{{ date_str }}/team/{{ team_data.Team }}'">
-            <div class="team-header {{ team_data.Team|lower }}">
-                {{ team_data.Team }} Team
+        <a class="team-card" href="{{ url_for('home_team_details', date_str=date_str, team_name=team_data.team) }}">
+            <div class="team-header {{ team_data.team|lower }}">
+                {{ team_data.team }} Team
             </div>
             <div class="team-data">
                 <div class="kids-present">
-                    Total Points - {{ team_data.get('Team Total Points', 0) }}
+                    Total Points - {{ team_data.team_total_points }}
                 </div>
             </div>
-        </div>
+        </a>
         {% endfor %}
     </div>
     {% else %}
@@ -37,5 +34,6 @@
         <p>No team data found for this date.</p>
     </div>
     {% endif %}
+    {{ sync_note(sync, None) }}
 </div>
 {% endblock %}

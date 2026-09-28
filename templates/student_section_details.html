@@ -1,53 +1,42 @@
 {% set show_header = true %}
-{% set page_title = "Section " + section_entry.Section|string %}
-{% set back_url = "/progress/student/" + student_name|urlencode + "/section/" + section_entry.Section|string|urlencode %}
+{% set page_title = "Section " + section_entry.section %}
+{% set back_url = url_for('student_section_log', contact_id=kid.contact_id, section=section_entry.section) %}
 {% extends "base.html" %}
 
-{% block title %}TNT Reading Teams Tracker - {{ student_name }} - Section {{ section_entry.Section }}{% endblock %}
+{% block title %}TNT Reading Teams Tracker - {{ kid.name }} - Section {{ section_entry.section }}{% endblock %}
 
 {% block content %}
-<a href="/progress/student/{{ student_name|urlencode }}/section/{{ section_entry.Section|string|urlencode }}" class="back-button">
-    ← Back to Section {{ section_entry.Section }}
-</a>
-
 <div class="page-header">
-    <div class="team-badge {{ section_entry.Team|lower }}">{{ section_entry.Team }} Team</div>
-    <h1>{{ student_name }}</h1>
-    <p class="subtitle">Section {{ section_entry.Section }} &mdash; {{ section_entry.Date|date_to_mmdd }}</p>
+    {% set entry_team = section_entry.team or 'Unassigned' %}
+    <div class="team-badge {{ entry_team|lower }}">{{ entry_team }}{% if section_entry.team %} Team{% endif %}</div>
+    <h1>{{ kid.name }}</h1>
+    <p class="subtitle">Section {{ section_entry.section }} &mdash; {{ section_entry.meeting_date|date_to_mmdd }}</p>
 </div>
 
-{% if section_entry %}
-<form id="editForm" method="POST" action="/edit_progress_section">
-    <input type="hidden" name="student_name" value="{{ student_name }}">
-    <input type="hidden" name="section_index" value="{{ section_index }}">
-    
+<form id="editForm" method="POST" action="{{ url_for('edit_progress_section') }}">
+    <input type="hidden" name="entry_id" value="{{ section_entry.id }}">
+
     <div class="attendance-details" id="attendanceDetails">
         <div class="details-header">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h3>Section Completion Details</h3>
-                <button type="button" class="edit-button" onclick="toggleEditMode()">Edit</button>
+                {% if writable %}<button type="button" class="edit-button" onclick="toggleEditMode()">Edit</button>{% endif %}
             </div>
         </div>
         <div class="details-list">
-            {% for key, value in section_entry.items() %}
-            {% if key not in ['Name', 'Team', 'Date', 'Section', 'timestamp', 'Timestamp'] %}
+            {% for field, _, label in credits %}
             <div class="detail-row">
-                <span class="detail-label">{{ key }}:</span>
+                <span class="detail-label">{{ label }}:</span>
                 <div class="detail-status">
                     <div class="status-display">
-                        {% if value and value|string|lower in ['true', 'yes', '1'] %}
-                        <span class="status-icon check">✓</span>
-                        {% else %}
-                        <span class="status-icon x">✗</span>
-                        {% endif %}
+                        {% if section_entry[field] %}<span class="status-icon check">✓</span>{% else %}<span class="status-icon x">✗</span>{% endif %}
                     </div>
                     <label class="toggle-switch">
-                        <input type="checkbox" name="{{ key }}" {% if value and value|string|lower in ['true', 'yes', '1'] %}checked{% endif %}>
+                        <input type="checkbox" name="{{ field }}" {% if section_entry[field] %}checked{% endif %}>
                         <span class="slider"></span>
                     </label>
                 </div>
             </div>
-            {% endif %}
             {% endfor %}
         </div>
         <div class="edit-buttons">
@@ -56,37 +45,6 @@
         </div>
     </div>
 </form>
-{% else %}
-<div class="no-data">
-    <h2>No Data Found</h2>
-    <p>No section data found.</p>
-</div>
-{% endif %}
 {% endblock %}
 
-{% block extra_js %}
-<script>
-function toggleEditMode() {
-    const details = document.getElementById('attendanceDetails');
-    details.classList.toggle('edit-mode');
-}
-
-document.getElementById('editForm').addEventListener('submit', function(event) {
-    event.preventDefault();
-    const formData = new FormData(this);
-    fetch('/edit_progress_section', {
-        method: 'POST',
-        body: formData
-    }).then(response => {
-        if (response.ok) {
-            window.location.reload();
-        } else {
-            alert('Error updating section completion');
-        }
-    }).catch(error => {
-        console.error('Error:', error);
-        alert('Error updating section completion');
-    });
-});
-</script>
-{% endblock %}
+{% block extra_js %}{% include "_edit_script.html" %}{% endblock %}

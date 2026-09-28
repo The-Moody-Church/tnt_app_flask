@@ -44,3 +44,14 @@ client_secret.json
 .Trashes
 ehthumbs.db
 Thumbs.db 
+# Local secrets and tooling
+.env.*
+!.env.example
+.vercel
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Sheet exports and import reports contain kids' names; never commit them
+*.xlsx
+import_reports/

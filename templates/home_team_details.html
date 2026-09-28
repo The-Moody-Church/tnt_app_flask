@@ -1,37 +1,33 @@
 {% set show_header = true %}
-{% set page_title = team_name + " Team" %}
-{% set back_url = "/home/" + date_str %}
+{% set page_title = team_name|team_title %}
+{% set back_url = url_for('home_details', date_str=date_str) %}
 {% extends "base.html" %}
 
 {% block title %}TNT Reading Teams Tracker - {{ team_name }} Team{% endblock %}
 
 {% block content %}
-<a href="/home/{{ date_str }}" class="back-button">
-    ← Back to {{ day_data.Date }}
-</a>
-
 <div class="page-header">
-    <div class="team-badge {{ team_name|lower }}">{{ team_name }} Team</div>
-    <h1>{{ day_data.Date }}</h1>
-    <p class="subtitle">{{ day_data.Theme }}</p>
+    <div class="team-badge {{ team_name|lower }}">{{ team_name|team_title }}</div>
+    <h1>{{ day_data.meeting_date|date_display }}</h1>
+    <p class="subtitle">{{ day_data.theme }}</p>
 </div>
 
-<button class="check-in-button" onclick="window.location.href='/home/{{ date_str }}/team/{{ team_name }}/record_section'">
+<a class="check-in-button" href="{{ url_for('record_section_kid_picker', date_str=date_str, team_name=team_name) }}">
     Record a Completed Section
-</button>
+</a>
 
 {% if team_data %}
 <div class="team-stats">
     <div class="stats-grid">
         <div class="stat-item">
             <span class="stat-label">Team Total Points</span>
-            <span class="stat-value">{{ team_data.get('Team Total Points', 0) }}</span>
+            <span class="stat-value">{{ team_data.team_total_points }}</span>
         </div>
-        {% for key, value in team_data.items() %}
-        {% if key not in ['Date', 'Team', 'Team Total Points'] and value %}
+        {% for label, key in stat_fields %}
+        {% if team_data[key] %}
         <div class="stat-item">
-            <span class="stat-label">{{ key }}</span>
-            <span class="stat-value">{{ value }}</span>
+            <span class="stat-label">{{ label }}</span>
+            <span class="stat-value">{{ team_data[key] }}</span>
         </div>
         {% endif %}
         {% endfor %}
@@ -43,15 +39,14 @@
     <h3>Completed Sections</h3>
     {% if kids_sections %}
     <div class="kids-grid">
-        {% for kid_name, sections in kids_sections.items() %}
+        {% for kid in kids_sections %}
         <div class="kid-item">
-            <strong>{{ kid_name }}</strong>
-            {% for section in sections %}
-            <div class="section-row" 
-                 onclick="window.location.href='/home/{{ date_str }}/team/{{ team_name }}/kid/{{ kid_name|urlencode }}/section/{{ section|urlencode }}'">
+            <strong>{{ kid.name }}</strong>
+            {% for section in kid.sections %}
+            <a class="section-row" href="{{ url_for('home_section_details', date_str=date_str, team_name=team_name, contact_id=kid.contact_id, section=section) }}">
                 <span class="section-name">{{ section }}</span>
                 <span class="arrow-icon">→</span>
-            </div>
+            </a>
             {% endfor %}
         </div>
         {% endfor %}

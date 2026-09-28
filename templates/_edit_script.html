@@ -1,0 +1,23 @@
+<script>
+function toggleEditMode() {
+    document.getElementById('attendanceDetails').classList.toggle('edit-mode');
+}
+(function () {
+    var form = document.getElementById('editForm');
+    if (!form) return;
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        fetch(form.action, { method: 'POST', body: new FormData(form), redirect: 'follow' })
+            .then(function (response) {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    response.json().then(function (b) { alert(b.message || 'Not saved'); },
+                                         function () { alert('Not saved'); });
+                    form.querySelector('button[type="submit"]').classList.remove('loading');
+                }
+            })
+            .catch(function () { alert('Couldn’t reach the server — nothing was saved.'); });
+    });
+})();
+</script>

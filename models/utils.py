@@ -1,115 +1,114 @@
-from datetime import datetime, date
+import re
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-_CHICAGO = ZoneInfo('America/Chicago')
+from flask import current_app, g, has_app_context, has_request_context
+
+CHICAGO = ZoneInfo('America/Chicago')
+_ISO_DATE_RE = re.compile(r'[0-9]{4}-[0-9]{2}-[0-9]{2}')
+
 
 def get_today():
-    """Return today's date, respecting DATE_OVERRIDE in test_mode if set."""
-    from models.test_mode import DATE_OVERRIDE
-    if DATE_OVERRIDE:
-        return datetime.strptime(DATE_OVERRIDE, '%Y-%m-%d').date()
-    return datetime.now(_CHICAGO).date()
+    """Today's date in Chicago.
+
+    Non-production overrides, in order: the ?today= QA cookie (g.today_override),
+    then TNT_DATE_OVERRIDE. Both are ignored in production.
+    """
+    if has_app_context() and current_app.config.get('ALLOW_DATE_OVERRIDE'):
+        if has_request_context() and g.get('today_override'):
+            return g.today_override
+        override = parse_url_date(current_app.config.get('TNT_DATE_OVERRIDE'))
+        if override:
+            return override
+    return datetime.now(CHICAGO).date()
 
 
-def find_closest_date_url(schedule_data):
-    """Return the date_to_url value for the closest upcoming date in the schedule."""
-    today = get_today()
-    fallback = None
-    for day in schedule_data:
-        raw = day.get('Date', '')
-        if not raw:
-            continue
-        try:
-            d = parse_date_string(raw)
-            url = date_to_url(raw)
-            fallback = url
-            if d >= today:
-                return url
-        except Exception:
-            continue
-    return fallback
-
-
-def find_column_index(worksheet, header_name):
-    """Find the index of a column by its header name"""
-    headers = worksheet.row_values(1)  # Get headers from first row
+def parse_url_date(value):
+    """Strict YYYY-MM-DD -> date, else None."""
+    if not isinstance(value, str) or not _ISO_DATE_RE.fullmatch(value):
+        return None
     try:
-        return headers.index(header_name) + 1  # Convert to 1-based index
+        return date.fromisoformat(value)
     except ValueError:
         return None
 
-def parse_date_string(date_str):
-    """Parse a date string in either ISO or readable format"""
-    if 'T' in str(date_str):
-        # Parse ISO format (2025-09-17T00:00:00.000Z)
-        return datetime.fromisoformat(str(date_str).replace('Z', '+00:00')).date()
-    else:
-        # Parse readable format (September 17, 2025)
-        return datetime.strptime(str(date_str), '%B %d, %Y').date()
 
-def dates_match(date1, date2):
-    """Check if two dates match, handling different formats"""
-    if not date1 or not date2:
-        return False
-    
+def find_closest_date(schedule, today=None):
+    """First schedule date on/after today, else the last date (None for an empty schedule)."""
+    today = today or get_today()
+    fallback = None
+    for day in schedule:
+        d = day['meeting_date']
+        fallback = d
+        if d >= today:
+            return d
+    return fallback
+
+
+def _as_date(value):
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
+
+
+def date_to_url(value):
+    """date -> 'YYYY-MM-DD'."""
     try:
-        parsed_date1 = parse_date_string(date1)
-        parsed_date2 = parse_date_string(date2)
-        return parsed_date1 == parsed_date2
-    except:
-        return str(date1) == str(date2)
+        return _as_date(value).isoformat()
+    except (TypeError, ValueError):
+        return str(value)
 
-def find_day_by_date(schedule_data, date_str):
-    """Find schedule entry by date string"""
-    for entry in schedule_data:
-        if dates_match(entry.get('Date'), date_str):
-            return entry
-    return None
 
-def date_to_url(date_str):
-    """Convert date string to URL-safe format (YYYY-MM-DD)"""
+def date_display(value):
+    """date -> 'September 9, 2026' (the sheet's display format)."""
     try:
-        # Parse various date formats and convert to YYYY-MM-DD
-        if 'T' in str(date_str):
-            # ISO format (2025-09-17T00:00:00.000Z)
-            dt = datetime.fromisoformat(str(date_str).replace('Z', '+00:00'))
-        elif ',' in date_str:
-            # "September 17, 2025" format
-            dt = datetime.strptime(date_str, '%B %d, %Y')
-        else:
-            # Try other common formats
-            for fmt in ['%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y']:
-                try:
-                    dt = datetime.strptime(date_str, fmt)
-                    break
-                except ValueError:
-                    continue
-            else:
-                return date_str  # Return as-is if can't parse
-        return dt.strftime('%Y-%m-%d')
-    except:
-        return date_str
+        d = _as_date(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return f'{d:%B} {d.day}, {d.year}'
 
-def date_to_mmdd(date_str):
-    """Convert any date string to mm/dd format"""
-    try:
-        return parse_date_string(str(date_str)).strftime('%-m/%-d')
-    except:
-        return str(date_str)
 
-def date_to_long(date_str):
-    """Convert any date string to 'November 5th' style"""
+def date_to_mmdd(value):
+    """date -> '9/16'."""
     try:
-        d = parse_date_string(str(date_str))
-        suffix = {1:'st',2:'nd',3:'rd'}.get(d.day % 20, 'th') if d.day not in (11,12,13) else 'th'
-        return d.strftime('%B ') + str(d.day) + suffix
-    except:
-        return str(date_str)
+        d = _as_date(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return f'{d.month}/{d.day}'
 
-def url_to_date(url_date):
-    """Convert URL date (YYYY-MM-DD) back to display format"""
+
+def date_to_long(value):
+    """date -> 'November 5th'."""
     try:
-        dt = datetime.strptime(url_date, '%Y-%m-%d')
-        return dt.strftime('%B %d, %Y')
-    except:
-        return url_date
+        d = _as_date(value)
+    except (TypeError, ValueError):
+        return str(value)
+    suffix = 'th' if d.day in (11, 12, 13) else {1: 'st', 2: 'nd', 3: 'rd'}.get(d.day % 10, 'th')
+    return f'{d:%B} {d.day}{suffix}'
+
+
+def time_short(value):
+    """aware datetime -> '6:12pm' in Chicago time."""
+    if not value:
+        return ''
+    if isinstance(value, datetime) and value.tzinfo:
+        value = value.astimezone(CHICAGO)
+    hour = value.hour % 12 or 12
+    return f"{hour}:{value.minute:02d}{'am' if value.hour < 12 else 'pm'}"
+
+
+def num(value):
+    """Totals display: ints as ints, floats like the sheet's automatic format (up to 10 significant digits)."""
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, int):
+        return value
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return value
+    if f == int(f):
+        return int(f)
+    return float(f'{f:.10g}')

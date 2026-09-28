@@ -1,0 +1,3 @@
+{% if qa_today %}
+<div class="qa-ribbon">Testing as {{ qa_today|date_display }} · <a href="?today=clear">clear</a></div>
+{% endif %}

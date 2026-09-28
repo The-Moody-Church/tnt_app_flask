@@ -1,114 +1,76 @@
 {% set show_header = true %}
-{% set page_title = "Check In Kid" %}
-{% set back_url = "/attendance/" + date_str + "/team/" + team_name %}
+{% set page_title = "Mark Present" %}
+{% set back_url = url_for('team_attendance_details', date_str=date_str, team_name=team_name) ~ '?show=all' %}
 {% extends "fullscreen_base.html" %}
 
-{% block title %}TNT Reading Teams Tracker - Check In Kid{% endblock %}
+{% block title %}TNT Reading Teams Tracker - Mark Present{% endblock %}
 
 {% block content %}
 <div class="form-container">
     <div class="form-header" style="margin-bottom:16px;">
-        <div class="team-badge {{ team_name|lower }}">{{ team_name }} Team</div>
+        <div class="team-badge {{ team_name|lower }}">{{ team_name|team_title }}</div>
     </div>
 
-    <form id="checkinForm" method="POST" action="/submit_checkin">
+    <form id="checkinForm" method="POST" action="{{ url_for('submit_checkin') }}">
         <input type="hidden" name="team" value="{{ team_name }}">
         <input type="hidden" name="date_str" value="{{ date_str }}">
-        <input type="hidden" name="date" value="{{ day_data.Date }}">
+        <input type="hidden" name="contact_id" value="{{ kid.contact_id }}">
 
-        {% if kid_name %}
-        <input type="hidden" name="name" value="{{ kid_name }}">
         <div style="border-left:4px solid var(--color-primary); padding:10px 14px; margin-bottom:20px;">
-            <div style="font-size:1.05em; font-weight:700; color:#333;">{{ kid_name }}</div>
-            <div style="font-size:0.82em; color:#888; margin-top:2px;">{{ day_data.Date|date_to_long }}</div>
+            <div style="font-size:1.05em; font-weight:700; color:#333;">{{ kid.name }}</div>
+            <div style="font-size:0.82em; color:#888; margin-top:2px;">{{ day_data.meeting_date|date_to_long }}</div>
+            <div style="font-size:0.82em; color:#b8860b; margin-top:6px;">Not checked in at the kiosk. Only mark present if they’re here.</div>
         </div>
-        {% else %}
-        <div class="form-group">
-            <label>Student</label>
-            <select name="name" id="name" required>
-                <option value="">Select a kid...</option>
-                {% for kid in team_kids %}
-                <option value="{{ kid }}">{{ kid }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div style="border-left:4px solid var(--color-primary); padding:10px 14px; margin-bottom:20px;">
-            <div style="font-size:0.82em; color:#888;">{{ day_data.Date|date_to_long }}</div>
-        </div>
-        {% endif %}
 
+        {% if writable %}
         <div class="form-group">
             <div class="toggle-group">
                 <span class="toggle-label">Present</span>
                 <label class="toggle-switch">
-                    <input type="checkbox" name="present">
+                    <input type="checkbox" name="manual_present" checked>
                     <span class="slider"></span>
                 </label>
             </div>
+            {% for field, _, label in flags %}
             <div class="toggle-group">
-                <span class="toggle-label">Has Bible</span>
+                <span class="toggle-label">{{ label }}</span>
                 <label class="toggle-switch">
-                    <input type="checkbox" name="has_bible">
+                    <input type="checkbox" name="{{ field }}" {% if kid[field] %}checked{% endif %}>
                     <span class="slider"></span>
                 </label>
             </div>
-            <div class="toggle-group">
-                <span class="toggle-label">Wearing Shirt?</span>
-                <label class="toggle-switch">
-                    <input type="checkbox" name="wearing_shirt">
-                    <span class="slider"></span>
-                </label>
-            </div>
-            <div class="toggle-group">
-                <span class="toggle-label">Has Book?</span>
-                <label class="toggle-switch">
-                    <input type="checkbox" name="has_book">
-                    <span class="slider"></span>
-                </label>
-            </div>
-            <div class="toggle-group">
-                <span class="toggle-label">Did Homework?</span>
-                <label class="toggle-switch">
-                    <input type="checkbox" name="did_homework">
-                    <span class="slider"></span>
-                </label>
-            </div>
-            <div class="toggle-group">
-                <span class="toggle-label">Has Dues</span>
-                <label class="toggle-switch">
-                    <input type="checkbox" name="has_dues">
-                    <span class="slider"></span>
-                </label>
-            </div>
+            {% endfor %}
         </div>
 
         <div class="form-buttons">
             <button type="submit" class="submit-button">Submit</button>
             <button type="button" class="cancel-button" onclick="window.history.back()">Cancel</button>
         </div>
+        {% else %}
+        <p class="empty-note">This date hasn’t happened yet, so nothing can be recorded.</p>
+        {% endif %}
     </form>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-document.getElementById('checkinForm').addEventListener('submit', function(event) {
-    event.preventDefault();
-    const formData = new FormData(this);
-    fetch('/submit_checkin', {
-        method: 'POST',
-        body: formData,
-        redirect: 'follow'
-    }).then(response => {
-        if (response.ok || response.redirected) {
-            window.location.href = '/attendance/{{ date_str }}/team/{{ team_name }}';
-        } else {
-            alert('Error submitting check-in');
-        }
-    }).catch(error => {
-        console.error('Error:', error);
-        alert('Error submitting check-in');
+(function () {
+    var form = document.getElementById('checkinForm');
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        fetch(form.action, { method: 'POST', body: new FormData(form), redirect: 'follow' })
+            .then(function (response) {
+                if (response.ok) {
+                    window.location.href = response.url;
+                } else {
+                    response.json().then(function (b) { alert(b.message || 'Not saved'); },
+                                         function () { alert('Not saved'); });
+                    form.querySelector('button[type="submit"]').classList.remove('loading');
+                }
+            })
+            .catch(function () { alert('Couldn’t reach the server — nothing was saved.'); });
     });
-});
+})();
 </script>
 {% endblock %}
