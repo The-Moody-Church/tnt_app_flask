@@ -5,36 +5,30 @@
 {% block title %}TNT Reading Teams Tracker - Home{% endblock %}
 
 {% block content %}
-{% if error %}
-<div class="error-message">
-    <p>Error loading schedule: {{ error }}</p>
-</div>
-{% elif schedule_data %}
+{% if schedule_data %}
 <div class="schedule-list">
     {% for day in schedule_data %}
-    {% set day_url = day.Date | date_to_url %}
-    {% set no_awana = 'no awana' in day.Theme|lower %}
-    <div class="schedule-item"
-         {% if no_awana %}style="opacity:0.4;"{% endif %}
-         {% if day_url == closest_date_str %}id="current-date" style="background: linear-gradient(135deg, #f9f0f2, #fdf6e3); border-left: 4px solid #72253D;"{% endif %}
-         onclick="window.location.href='/home/{{ day_url }}'">
+    {% set is_closest = day.meeting_date == closest_date %}
+    <a class="schedule-item{% if day.no_club %} is-no-club{% endif %}{% if is_closest %} is-today{% endif %}"
+       {% if is_closest %}id="current-date"{% endif %}
+       href="{{ url_for('home_details', date_str=day.meeting_date|date_to_url) }}">
         <div class="schedule-header">
             <div class="schedule-main">
-                <h3>{{ day.Date }}</h3>
-                <p class="theme">{{ day.Theme }}</p>
+                <h3>{{ day.meeting_date|date_display }}</h3>
+                <p class="theme">{{ day.theme }}</p>
             </div>
-            {% if day_url == closest_date_str %}
-            <span style="background:#72253D; color:#fff; font-size:0.85em; font-weight:700; padding:5px 12px; border-radius:14px; margin-right:8px; white-space:nowrap;">TODAY</span>
+            {% if is_closest %}
+            <span class="today-badge">{{ 'TODAY' if day.meeting_date == today else 'NEXT' }}</span>
             {% endif %}
             <span class="arrow-icon">→</span>
         </div>
-    </div>
+    </a>
     {% endfor %}
 </div>
 {% else %}
 <div class="placeholder-content">
     <h2>No Schedule Data</h2>
-    <p>No schedule found in the Google Sheet.</p>
+    <p>No schedule found.</p>
 </div>
 {% endif %}
 {% endblock %}

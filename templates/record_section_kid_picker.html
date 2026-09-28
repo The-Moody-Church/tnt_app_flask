@@ -1,6 +1,7 @@
+{% from "_macros.html" import summary_bar, present_label %}
 {% set show_header = true %}
 {% set page_title = "Record Section" %}
-{% set back_url = "/home/" + date_str + "/team/" + team_name %}
+{% set back_url = url_for('home_team_details', date_str=date_str, team_name=team_name) if team_name != 'Unassigned' else url_for('home_details', date_str=date_str) %}
 {% extends "fullscreen_base.html" %}
 
 {% block title %}TNT Reading Teams Tracker - Record Section{% endblock %}
@@ -8,19 +9,34 @@
 {% block content %}
 <div class="form-container">
     <div class="form-header">
-        <div class="team-badge {{ team_name|lower }}">{{ team_name }} Team</div>
+        <div class="team-badge {{ team_name|lower }}">{{ team_name|team_title }}</div>
         <h2>Pick a Student</h2>
-        <p class="subtitle">{{ day_data.Date }}</p>
+        <p class="subtitle">{{ day_data.meeting_date|date_display }}</p>
     </div>
 
+    {{ summary_bar(here|length, absent|length, show_all, sync, url_for('record_section_kid_picker', date_str=date_str, team_name=team_name)) }}
+
     <div class="kids-list">
-        {% for kid in team_kids %}
-        <div class="kid-item" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;"
-             onclick="window.location.href='/home/{{ date_str }}/team/{{ team_name }}/record_section/kid/{{ kid|urlencode }}'">
-            <span>{{ kid }}</span>
+        {% for kid in here %}
+        <a class="kid-item kid-link" href="{{ url_for('record_section_list', date_str=date_str, team_name=team_name, contact_id=kid.contact_id) }}">
+            <span>{{ kid.name }}</span>
             <span class="arrow-icon">→</span>
-        </div>
+        </a>
+        {% else %}
+        <p class="empty-note">No one {% if team_name != 'Unassigned' %}from {{ team_name }} {% endif %}is checked in yet. Check-ins show up here as families check in at the kiosk.</p>
         {% endfor %}
     </div>
+
+    {% if show_all and absent %}
+    <p class="group-label">Not checked in ({{ absent|length }})</p>
+    <div class="kids-list">
+        {% for kid in absent %}
+        <a class="kid-item kid-link is-absent" href="{{ url_for('record_section_list', date_str=date_str, team_name=team_name, contact_id=kid.contact_id) }}">
+            <span>{{ kid.name }}<span class="kid-status">Not checked in</span></span>
+            <span class="arrow-icon">→</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

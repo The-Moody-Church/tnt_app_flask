@@ -12,11 +12,11 @@
 
 <div class="schedule-list" id="studentsList">
     {% for student in students %}
-    <div class="schedule-item student-item" onclick="window.location.href='/progress/student/{{ student.Name|urlencode }}'">
+    <a class="schedule-item student-item" href="{{ url_for('student_progress', contact_id=student.contact_id) }}">
         <div class="schedule-header">
             <div class="schedule-main">
-                <h3>{{ student.Name }}</h3>
-                <p class="theme">{{ student.Group }} Team</p>
+                <h3>{{ student.name }}</h3>
+                <p class="theme">{{ student.team ~ ' Team' if student.team else 'Unassigned' }}{% if not student.active %} · inactive{% endif %}</p>
             </div>
             <div style="display:flex; gap:8px; align-items:center; margin-right:8px;">
                 <span style="font-size:0.75em; color:#555;">📖 {{ student.total_sections }}</span>
@@ -25,35 +25,26 @@
             </div>
             <span class="arrow-icon">→</span>
         </div>
-    </div>
+    </a>
     {% endfor %}
 </div>
 {% else %}
 <div class="no-data">
     <h2>No Students Found</h2>
-    <p>No students found in the Master Roster.</p>
-    {% if error %}
-    <p class="error-message">Error: {{ error }}</p>
-    {% endif %}
+    <p>No kids on the T&amp;T roster yet.</p>
 </div>
 {% endif %}
 {% endblock %}
 
 {% block extra_js %}
 <script>
-document.getElementById('studentSearch').addEventListener('input', function() {
+var search = document.getElementById('studentSearch');
+if (search) search.addEventListener('input', function() {
     const searchTerm = this.value.toLowerCase();
-    const studentItems = document.querySelectorAll('#studentsList .student-item');
-    
-    studentItems.forEach(function(item) {
+    document.querySelectorAll('#studentsList .student-item').forEach(function(item) {
         const studentName = item.querySelector('h3').textContent.toLowerCase();
         const teamName = item.querySelector('.theme').textContent.toLowerCase();
-        
-        if (studentName.includes(searchTerm) || teamName.includes(searchTerm)) {
-            item.style.display = 'block';
-        } else {
-            item.style.display = 'none';
-        }
+        item.style.display = (studentName.includes(searchTerm) || teamName.includes(searchTerm)) ? '' : 'none';
     });
 });
 </script>

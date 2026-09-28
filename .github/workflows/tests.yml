@@ -4,9 +4,24 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17          # Neon runs Postgres 17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tnt_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/tnt_test
     steps:
       - uses: actions/checkout@v4
 
@@ -16,7 +31,17 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest
+        run: pip install -r requirements-dev.txt
+
+      - name: Check migrations and grants against a fresh schema
+        env:
+          PGPASSWORD: postgres
+          DATABASE_URL_UNPOOLED: postgresql://postgres:postgres@localhost:5432/tnt_test
+        run: |
+          python scripts/migrate.py
+          psql -h localhost -U postgres -d tnt_test -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE tnt_rw NOLOGIN" -c "CREATE ROLE tnt_readonly NOLOGIN"
+          psql -h localhost -U postgres -d tnt_test -f scripts/neon/grants.sql
 
       - name: Run tests
         run: pytest tests/ -q

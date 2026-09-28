@@ -1,12 +1,13 @@
+{% from "_macros.html" import summary_bar, present_label %}
 {% set show_header = true %}
-{% set page_title = team_name + " Team" %}
-{% set back_url = "/attendance/" + date_str %}
+{% set page_title = team_name + (" Team" if not is_unassigned else "") %}
+{% set back_url = url_for('attendance_details', date_str=date_str) %}
 {% extends "base.html" %}
 
-{% block title %}TNT Reading Teams Tracker - {{ team_name }} Team{% endblock %}
+{% block title %}TNT Reading Teams Tracker - {{ team_name }}{% endblock %}
 
 {% macro chip(label, value) %}
-{% if value and value|string|lower in ['true', 'yes', '1', 'present'] %}
+{% if value %}
 <span style="background:#e8f5e9; color:#2e7d32; font-size:0.68em; font-weight:600; padding:2px 7px; border-radius:8px; white-space:nowrap;">{{ label }}</span>
 {% else %}
 <span style="background:#f0f0f0; color:#bbb; font-size:0.68em; padding:2px 7px; border-radius:8px; white-space:nowrap;">{{ label }}</span>
@@ -15,44 +16,53 @@
 
 {% block content %}
 <div class="page-header">
-    <div class="team-badge {{ team_name|lower }}">{{ team_name }} Team</div>
-    <h1>{{ day_data.Date }}</h1>
-    <p class="subtitle">{{ day_data.Theme }}</p>
+    <div class="team-badge {{ team_name|lower }}">{{ team_name }}{% if not is_unassigned %} Team{% endif %}</div>
+    <h1>{{ day_data.meeting_date|date_display }}</h1>
+    <p class="subtitle">{{ day_data.theme }}</p>
 </div>
 
+{% if unassigned_here %}
+<a class="banner-warning" href="{{ url_for('team_attendance_details', date_str=date_str, team_name='Unassigned') }}">
+    ⚠ {{ unassigned_here }} checked-in kid{{ 's have' if unassigned_here != 1 else ' has' }} no team →
+</a>
+{% endif %}
+
+{{ summary_bar(here|length, absent|length, show_all, sync, url_for('team_attendance_details', date_str=date_str, team_name=team_name)) }}
 
 <div class="kids-list">
-    <h3>Attendance</h3>
+    <h3>Here</h3>
     <div class="kids-grid">
-        {% for kid in kids_with_status %}
-        {% set entry = kid.entry %}
-        {% if entry %}
-        <div class="section-row"
-             onclick="window.location.href='/attendance/{{ date_str }}/team/{{ team_name }}/kid/{{ kid.name|urlencode }}'">
+        {% for kid in here %}
+        <a class="section-row" href="{{ url_for('kid_attendance_details', date_str=date_str, team_name=team_name, contact_id=kid.contact_id) }}">
             <div style="flex:1; min-width:0;">
                 <span class="section-name">{{ kid.name }}</span>
+                <span class="kid-status{% if kid.source == 'manual' %} is-manual{% endif %}">{{ present_label(kid) }}</span>
                 <div style="margin-top:6px; display:flex; gap:4px; flex-wrap:nowrap; overflow:hidden;">
-                    {{ chip('Here', entry.get('Present')) }}
-                    {{ chip('Bible', entry.get('Has Bible')) }}
-                    {{ chip('Shirt', entry.get('Wearing Shirt?')) }}
-                    {{ chip('Book', entry.get('Has Book?')) }}
-                    {{ chip('HW', entry.get('Did Homework?')) }}
-                    {{ chip('Dues', entry.get('Has Dues?')) }}
+                    {% for field, short, _ in flags %}{{ chip(short, kid[field]) }}{% endfor %}
                 </div>
             </div>
             <span class="arrow-icon">→</span>
-        </div>
+        </a>
         {% else %}
-        <div class="section-row" style="border-style:dashed; border-color:#ccc;"
-             onclick="window.location.href='/attendance/{{ date_str }}/team/{{ team_name }}/checkin/{{ kid.name|urlencode }}'">
-            <div style="flex:1; min-width:0;">
-                <span class="section-name">{{ kid.name }}</span>
-                <div style="margin-top:4px; font-size:0.78em; color:#999;">Tap to check in</div>
-            </div>
-            <span class="arrow-icon">→</span>
-        </div>
-        {% endif %}
+        <p class="empty-note">No one {% if not is_unassigned %}from {{ team_name }} {% endif %}is checked in yet. Check-ins show up here as families check in at the kiosk.</p>
         {% endfor %}
     </div>
 </div>
+
+{% if show_all and absent %}
+<div class="kids-list">
+    <h3>Not checked in ({{ absent|length }})</h3>
+    <div class="kids-grid">
+        {% for kid in absent %}
+        <a class="section-row is-absent" href="{{ url_for('checkin_form_for_kid', date_str=date_str, team_name=team_name, contact_id=kid.contact_id) }}">
+            <div style="flex:1; min-width:0;">
+                <span class="section-name">{{ kid.name }}</span>
+                <div style="margin-top:4px; font-size:0.78em; color:#999;">{% if writable %}Tap to mark present{% else %}Not checked in{% endif %}</div>
+            </div>
+            <span class="arrow-icon">→</span>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 {% endblock %}

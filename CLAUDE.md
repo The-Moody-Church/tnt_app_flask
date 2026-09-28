@@ -1,103 +1,87 @@
 # TNT App — Claude Context
 
-Flask web app for tracking a church kids' reading program (TNT). Tracks attendance and reading section completions per kid, per team, per date. Data lives entirely in Google Sheets.
+Mobile-first Flask PWA that Awana T&T leaders use on their phones on Wednesday nights. It tracks each kid's
+attendance items (Bible, Shirt, Book, HW, Dues) and completed book sections per team per date, and shows team points.
+
+- **Roster and check-in come from MinistryPlatform (MP):** Group 697 "T&T" is the roster (team color in
+  `Group_Participants.Notes`), and MP check-in decides who is "present".
+- **App data lives in PostgreSQL** (Neon, project `restless-pond-21520685`, database `tnt`).
+- **Deployed on Vercel** (region `cle1`, next to Neon us-east-2).
+
+This repo is The Moody Church's fork of `ovitisler/tnt_app` (the `upstream` remote, reference only). The fork has
+diverged: kids are keyed by MP `Contact_ID`, data moved off Google Sheets. Upstream changes won't merge cleanly.
 
 ## Running Locally
 
 ```bash
-source .venv/bin/activate
-python tnt.py        # http://localhost:5001
-pytest tests/ -q    # run tests
+docker run -d --name tnt-pg -e POSTGRES_PASSWORD=postgres -p 55432:5432 postgres:17   # once
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+cp .env.example .env                       # fill in DATABASE_URL, MP_CLIENT_ID/SECRET, ...
+DATABASE_URL_UNPOOLED=$DATABASE_URL .venv/bin/python scripts/migrate.py
+.venv/bin/python tnt.py                    # http://localhost:5001
+.venv/bin/python -m pytest tests/ -q       # uses postgres on localhost:55432 (TEST_DATABASE_URL overrides)
 ```
+
+Pretend it's club night: `TNT_DATE_OVERRIDE=2026-09-23` in `.env`, or `?today=2026-09-23` in the browser
+(non-production only; `?today=clear` removes it).
 
 ## Architecture
 
-**Entry point:** `tnt.py` — creates Flask app, registers route blueprints, adds Jinja filters.
+- `tnt.py` — `create_app()` factory (module-level `app` kept); error handlers, `/healthz`, QA date override.
+  `app.py` is the Vercel zero-config entrypoint. `config.py` — pure `load_config(env)`.
+- `models/`:
+  - `db.py` — psycopg 3, one connection per request (Neon pooled URL; `prepare_threshold=None`).
+  - `data.py` — all app reads/writes. Pure SQL, no MP calls. snake_case dict rows with real dates.
+    Keyword-only `contact_id=`/`meeting_date=`; `team=ALL` means no filter, `team=None` means Unassigned.
+    Errors raise `models/errors.py` types and are never swallowed.
+  - `mp.py` — MP REST client (client-credentials token cache, typed errors, `q_*` filter-literal helpers).
+    Values only enter a `$filter` through `q_int`/`q_ids`/`q_date`/`q_guid`.
+  - `roster.py` — Group 697 → `kids` sync, and `assign_team` (writes `Notes` back to MP with `$userId`).
+  - `checkins.py` — MP check-in → `attendance` sync; `live_sync(d)` is the request-path entry point.
+  - `sync_state.py` — single-flight sync-on-read claims, per-request MP time budget, `mp_health` circuit breaker.
+    There are no background threads (they're unreliable on serverless).
+  - `fields.py` — column whitelists, labels, team parsing. `utils.py` — `get_today()`, date filters.
+- `routes/` — `home.py` (sections), `attendance.py`, `progress.py`, `_common.py` (shared helpers).
+- `migrations/NNNN_*.sql` + `scripts/migrate.py` (owner role, DIRECT url). Grants: `scripts/neon/grants.sql`.
+- `scripts/import_sheet.py` — one-time import of the legacy sheet export (dry run by default).
+- `scripts/mp_probe.py` — read-only check that the MP API client has the table permissions it needs.
 
-**Data layer:** `models/` — all sheet I/O goes through here, never directly from routes.
-- `sheets.py` — sheet names as constants, list of which sheets are static (cached long-term) vs dynamic
-- `data.py` — all read/write functions (`get_*`, `insert_*`, `update_*`, `upsert_*`)
-- `cache.py` — stale-while-revalidate caching; background threads refresh data
-- `fields.py` — column name constants (`NAME`, `DATE`, `SECTION`, etc.)
-- `utils.py` — date helpers (`get_today()`, `date_to_mmdd()`, `find_closest_date_url()`)
-- `test_mode.py` — `DATE_OVERRIDE` string for testing with historical data; set to `None` in prod
+## Data rules (don't break these)
 
-**Routes:** `routes/` — each file registers routes on the Flask app via `register_*_routes(app)`.
-- `home.py` — schedule view + record completed sections flow
-- `attendance.py` — attendance check-in flow
-- `progress.py` — per-student progress view and section edit
-- `testing.py` — dev/debug endpoints
+- **Present:** present = MP check-in (status 3/4 with `Time_In`) OR a leader's manual mark.
+  - Lists hide kids who aren't checked in; "Show all" reveals them.
+  - Bible/Shirt/… can only be newly set for present kids.
+- **Team snapshot:** each attendance/section row keeps the team it was first written under, so past totals never
+  shift when MP changes a kid's team. Sections take that night's attendance-row team.
+  - A NULL (Unassigned) team is filled in only for *today's* rows, when the kid gets a team.
+- **Never delete rows.** The app DB role has no DELETE. A section row with all credits false scores 0 and is hidden.
+- **No writes for future dates** (`data.is_writable_date`); this closes the old UTC bug class.
+- **Totals** are the SQL views `weekly_attendance_totals` / `weekly_totals`, which reproduce the old sheet
+  formulas exactly (including the "Total Points : 10375" string = points per kid × 1000). Don't "fix" them.
+- **Identity:** kids are keyed by MP `Contact_ID` everywhere (URLs, forms, rows). Never match on names.
 
-**Templates:** `templates/` — Jinja2, mobile-first. Two base layouts:
-- `base.html` — standard page with header/back button
-- `fullscreen_base.html` — form pages (no nav chrome)
+## MP facts
 
-## Key Data Flows
+- Groups: 697 = T&T kids (role 2 = kid; other roles are volunteers); 1000 = T&T Leaders (who may sign in).
+- One shared Awana check-in event per Wednesday; find it via `Event_Groups.Group_ID=697`, `[Allow_Check-in]=1`.
+- Walk-ins can have `Event_Participants.Group_ID` NULL and Notes "Created by CheckIn" (team = Unassigned).
+- MP datetimes are naive Central time (`mp.parse_mp_datetime` attaches America/Chicago).
 
-### Record a Completed Section (home tab)
-1. Pick date → pick team → "Record Section" → `record_section_kid_picker` (pick kid)
-2. → `record_section_list` — shows all Book Sections with coalesced status chips (Main ✓, 🥈, 🥇)
-3. → `record_section_form` — greyed kid/date/section + toggles only for credits not yet recorded
-4. POST `/submit_section` → `upsert_completed_section()` — updates today's row if exists, inserts if not
+## Templates / CSS
 
-### Attendance Check-In
-1. Pick date → pick team → `team_attendance_details` — shows ALL roster kids (checked-in: chips; not: dashed row)
-2. Tap unchecked kid → `checkin_form_for_kid` → POST `/submit_checkin`
-3. Tap checked-in kid → `kid_attendance_details` → POST `/edit_attendance`
-
-### Student Progress (progress tab)
-1. Search by name → `student_progress` — coalesced section list (one row per section, merged across dates)
-2. Tap section → `student_section_log` — audit log of all raw records for that section
-3. Tap record → `student_section_details` → POST `/edit_progress_section`
-
-## Upsert Logic
-`upsert_completed_section` checks for an existing row matching (Name, Date, Section) for today. If found, updates it; if not, inserts a new row. This prevents duplicate rows for the same kid/day/section.
-
-## Coalescing
-Multiple rows can exist per (kid, section) across different dates. The UI merges them:
-- `main_date` — date the section was marked complete
-- `silver_date` / `gold_date` — dates those credits were recorded (may differ from main)
-
-## Date Handling
-- `get_today()` in `utils.py` returns `DATE_OVERRIDE` (from `test_mode.py`) if set, else real today
-- URL date format: `YYYY-MM-DD` (e.g. `2025-10-23`)
-- Display date format: `January 15, 2025` (as stored in Google Sheets)
-- `date_to_mmdd` Jinja filter: formats ISO date as `m/d` for compact display
-
-## CSS Conventions
-- `.section-row` — standard list item with flex layout
-- `.section-row.complete` — gold gradient background (all 3 credits done); defined BEFORE `:hover` rule so hover can override
-- `.back-btn` — pill-style back button in the header (defined in `base.html`)
-- Chips: inline `style=` spans with green/grey backgrounds; `white-space: nowrap` on container
-
-## Google Sheets Structure
-- **Schedule** — reading schedule dates and themes
-- **Attendance** — one row per kid per date (check-in fields)
-- **Attendance Totals** — aggregated per team per date
-- **Completed Sections** — one row per action (Name, Date, Section, Silver Credit, Gold Credit, Team)
-- **Book Sections** — single column `Section`, master list of all sections
-- **Roster** — kids with their team (`Group` column)
-
-## Deployment
-Hosted on Vercel (serverless). Each request may hit a fresh instance with no warm state.
-
-**Caching** is controlled by `CACHE_BACKEND` env var:
-- `memory` (default) — in-process dict, works within a warm instance, lost on cold start
-- `redis` — Vercel Redis (`REDIS_URL`), shared across all instances, survives cold starts
-
-Cache TTLs: 86400s for static sheets (Schedule, Roster, Book Sections), 15s for dynamic sheets (Completed Sections, Attendance). Background refresh threads exist in the codebase but are unreliable in serverless — they fire but may not complete.
-
-## Pushing to GitHub
-Remote is `https://ovitisler@github.com/ovitisler/tnt_app.git`. Needs a PAT:
-```bash
-git push https://ovitisler:<PAT>@github.com/ovitisler/tnt_app.git main
-```
-
-This is a personal repo — always use personal git settings, never HubSpot:
-- `git config user.email` should be `ovi.tisler@gmail.com` (already set locally)
-- Never use `--global` for git config changes here
+- `base.html` (header + bottom nav) and `fullscreen_base.html` (form pages). Shared bits in `_macros.html`.
+- Rows are real `<a href>` links built with `url_for` (never `onclick="window.location…"`).
+- Tap targets are at least 44px. Hover styles are neutralized on touch screens (`@media (hover: none)`).
 
 ## Testing
-Tests are in `tests/`. They mock gspread and all Google Sheets calls. No real sheet access needed.
-- Mock the function as imported in the route module, e.g. `@patch('routes.home.upsert_completed_section')`
-- `DATE_OVERRIDE` in `test_mode.py` affects `get_today()` — keep it set to a date with test data
+
+- Tests run against real Postgres (fixtures in `tests/conftest.py`: `conn`, `seeded`, `client`, `fake_mp`, `app_ctx`).
+- MP is always faked (`FakeMP`); `seeded` marks syncs fresh so routes don't call MP.
+- There is no fake data layer on purpose: the SQL must stay in step with what routes expect.
+
+## Git
+
+- Remote `origin` = `The-Moody-Church/tnt_app_flask`. Run `gh repo set-default The-Moody-Church/tnt_app_flask`
+  once per clone: the `upstream` remote is marked `gh-resolved = base`, so `gh` would otherwise target Ovi's repo.
+- Branch + PR for code (merge commits); docs-only changes may go straight to `main`. Push right after committing.
+- Never embed tokens in remote URLs.

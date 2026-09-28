@@ -1,58 +1,63 @@
+{% from "_macros.html" import present_label %}
 {% set show_header = true %}
-{% set page_title = kid_name %}
-{% set back_url = "/attendance/" + date_str + "/team/" + team_name %}
+{% set page_title = kid.name %}
+{% set back_url = url_for('team_attendance_details', date_str=date_str, team_name=team_name) %}
 {% extends "base.html" %}
 
-{% block title %}TNT Reading Teams Tracker - {{ kid_name }}{% endblock %}
+{% block title %}TNT Reading Teams Tracker - {{ kid.name }}{% endblock %}
 
 {% block content %}
-<a href="/attendance/{{ date_str }}/team/{{ team_name }}" class="back-button">
-    ← Back to {{ team_name }} Team
-</a>
-
 <div class="page-header">
-    <div class="team-badge {{ team_name|lower }}">{{ team_name }} Team</div>
-    <h1>{{ kid_name }}</h1>
-    <p class="subtitle">{{ day_data.Date }} - {{ day_data.Theme }}</p>
+    <div class="team-badge {{ team_name|lower }}">{{ team_name|team_title }}</div>
+    <h1>{{ kid.name }}</h1>
+    <p class="subtitle">{{ day_data.meeting_date|date_display }} - {{ day_data.theme }}</p>
 </div>
 
-{% if kid_entry %}
-<form id="editForm" method="POST" action="/edit_attendance">
+<form id="editForm" method="POST" action="{{ url_for('edit_kid_attendance') }}">
     <input type="hidden" name="date_str" value="{{ date_str }}">
     <input type="hidden" name="team_name" value="{{ team_name }}">
-    <input type="hidden" name="kid_name" value="{{ kid_name }}">
-    
+    <input type="hidden" name="contact_id" value="{{ kid.contact_id }}">
+    {% if not kid.mp_checked_in %}<input type="hidden" name="can_mark_present" value="1">{% endif %}
+
     <div class="attendance-details" id="attendanceDetails">
         <div class="details-header">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h3>Details</h3>
-                <button type="button" class="edit-button" onclick="toggleEditMode()">Edit</button>
+                {% if writable %}<button type="button" class="edit-button" onclick="toggleEditMode()">Edit</button>{% endif %}
             </div>
         </div>
         <div class="details-list">
-            {% for key, value in kid_entry.items() %}
-            {% if key not in ['Name', 'Team', 'timestamp', 'Timestamp'] %}
             <div class="detail-row">
-                <span class="detail-label">{{ key }}:</span>
+                <span class="detail-label">Present:</span>
+                {% if kid.mp_checked_in %}
+                <div class="detail-status">
+                    <span class="status-text present-status">{{ present_label(kid) }}</span>
+                </div>
+                {% else %}
                 <div class="detail-status">
                     <div class="status-display">
-                        {% if key == 'Date' %}
-                        <span class="status-text">{{ value }}</span>
-                        {% elif value and value|string|lower in ['true', 'yes', '1', 'present'] %}
-                        <span class="status-icon check">✓</span>
-                        {% else %}
-                        <span class="status-icon x">✗</span>
-                        {% endif %}
+                        <span class="status-text present-status{% if not kid.present %} is-absent{% endif %}">{{ present_label(kid) }}</span>
                     </div>
-                    {% if key != 'Date' %}
-                    <label class="toggle-switch">
-                        <input type="checkbox" name="{{ key }}" {% if value and value|string|lower in ['true', 'yes', '1', 'present'] %}checked{% endif %}>
+                    <label class="toggle-switch" title="Mark present (not checked in at the kiosk)">
+                        <input type="checkbox" name="manual_present" {% if kid.manual_present %}checked{% endif %}>
                         <span class="slider"></span>
                     </label>
-                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            {% for field, _, label in flags %}
+            <div class="detail-row">
+                <span class="detail-label">{{ label }}:</span>
+                <div class="detail-status">
+                    <div class="status-display">
+                        {% if kid[field] %}<span class="status-icon check">✓</span>{% else %}<span class="status-icon x">✗</span>{% endif %}
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" name="{{ field }}" {% if kid[field] %}checked{% endif %}>
+                        <span class="slider"></span>
+                    </label>
                 </div>
             </div>
-            {% endif %}
             {% endfor %}
         </div>
         <div class="edit-buttons">
@@ -61,37 +66,6 @@
         </div>
     </div>
 </form>
-{% else %}
-<div class="no-data">
-    <h2>No Data Found</h2>
-    <p>No attendance data found for {{ kid_name }} on {{ day_data.Date }}.</p>
-</div>
-{% endif %}
 {% endblock %}
 
-{% block extra_js %}
-<script>
-function toggleEditMode() {
-    const details = document.getElementById('attendanceDetails');
-    details.classList.toggle('edit-mode');
-}
-
-document.getElementById('editForm').addEventListener('submit', function(event) {
-    event.preventDefault();
-    const formData = new FormData(this);
-    fetch('/edit_attendance', {
-        method: 'POST',
-        body: formData
-    }).then(response => {
-        if (response.ok) {
-            window.location.reload();
-        } else {
-            alert('Error updating attendance');
-        }
-    }).catch(error => {
-        console.error('Error:', error);
-        alert('Error updating attendance');
-    });
-});
-</script>
-{% endblock %}
+{% block extra_js %}{% include "_edit_script.html" %}{% endblock %}

@@ -1,6 +1,6 @@
 {% set show_header = true %}
 {% set page_title = "Record Section" %}
-{% set back_url = "/home/" + date_str + "/team/" + team_name + "/record_section/kid/" + kid_name|urlencode %}
+{% set back_url = url_for('record_section_list', date_str=date_str, team_name=team_name, contact_id=kid.contact_id) %}
 {% extends "fullscreen_base.html" %}
 
 {% block title %}TNT Reading Teams Tracker - Record Section{% endblock %}
@@ -8,20 +8,19 @@
 {% block content %}
 <div class="form-container">
     <div class="form-header" style="margin-bottom:16px;">
-        <div class="team-badge {{ team_name|lower }}">{{ team_name }} Team</div>
+        <div class="team-badge {{ team_name|lower }}">{{ team_name|team_title }}</div>
     </div>
 
-    <form id="sectionForm" method="POST" action="/submit_section">
+    <form id="sectionForm" method="POST" action="{{ url_for('submit_section') }}">
         <input type="hidden" name="team" value="{{ team_name }}">
         <input type="hidden" name="date_str" value="{{ date_str }}">
-        <input type="hidden" name="date" value="{{ day_data.Date }}">
-        <input type="hidden" name="name" value="{{ kid_name }}">
+        <input type="hidden" name="contact_id" value="{{ kid.contact_id }}">
         <input type="hidden" name="section" value="{{ section_name }}">
 
         <div style="border-left:4px solid var(--color-primary); padding:10px 14px; margin-bottom:20px;">
-            <div style="font-size:1.05em; font-weight:700; color:#333;">{{ kid_name }}</div>
+            <div style="font-size:1.05em; font-weight:700; color:#333;">{{ kid.name }}</div>
             <div style="font-size:0.85em; color:#555; margin-top:4px;">Section {{ section_name }}</div>
-            <div style="font-size:0.82em; color:#888; margin-top:2px;">{{ day_data.Date|date_to_long }}</div>
+            <div style="font-size:0.82em; color:#888; margin-top:2px;">{{ day_data.meeting_date|date_to_long }}</div>
         </div>
 
         {% if history.main_date or history.silver_date or history.gold_date %}
@@ -66,7 +65,9 @@
         {% endif %}
 
         {% set all_done = history.main_date and history.silver_date and history.gold_date %}
-        {% if all_done %}
+        {% if not writable %}
+        <p class="empty-note">This date hasn’t happened yet, so nothing can be recorded.</p>
+        {% elif all_done %}
         <div style="text-align:center; padding: 24px 0; color: #5c6bc0;">
             <div style="font-size: 2em; margin-bottom: 8px;">🎉</div>
             <p style="font-weight: 600; margin: 0;">All credits already recorded!</p>
@@ -80,7 +81,7 @@
             <div class="toggle-group">
                 <span class="toggle-label">Section Complete</span>
                 <label class="toggle-switch">
-                    <input type="checkbox" name="Section Complete">
+                    <input type="checkbox" name="section_complete">
                     <span class="slider"></span>
                 </label>
             </div>
@@ -90,7 +91,7 @@
             <div class="toggle-group">
                 <span class="toggle-label">Silver Credit</span>
                 <label class="toggle-switch">
-                    <input type="checkbox" name="Silver Credit">
+                    <input type="checkbox" name="silver_credit">
                     <span class="slider"></span>
                 </label>
             </div>
@@ -100,7 +101,7 @@
             <div class="toggle-group">
                 <span class="toggle-label">Gold Credit</span>
                 <label class="toggle-switch">
-                    <input type="checkbox" name="Gold Credit">
+                    <input type="checkbox" name="gold_credit">
                     <span class="slider"></span>
                 </label>
             </div>
@@ -119,25 +120,26 @@
 {% block extra_js %}
 <script>
 const submitBtn = document.getElementById('submitBtn');
+if (!submitBtn) { /* read-only */ }
 const checkboxes = document.querySelectorAll('#sectionForm input[type="checkbox"]');
 function updateSubmitState() {
     const anyChecked = Array.from(checkboxes).some(cb => cb.checked);
-    submitBtn.disabled = !anyChecked;
+    if (submitBtn) submitBtn.disabled = !anyChecked;
 }
 checkboxes.forEach(cb => cb.addEventListener('change', updateSubmitState));
 
 document.getElementById('sectionForm').addEventListener('submit', function(event) {
     event.preventDefault();
     const formData = new FormData(this);
-    fetch('/submit_section', {
+    fetch(this.action, {
         method: 'POST',
         body: formData,
         redirect: 'follow'
     }).then(response => {
-        if (response.ok || response.redirected) {
-            window.location.href = '/home/{{ date_str }}/team/{{ team_name }}';
+        if (response.ok) {
+            window.location.href = response.url;
         } else {
-            alert('Error recording section');
+            response.json().then(b => alert(b.message || 'Error recording section'), () => alert('Error recording section'));
         }
     }).catch(error => {
         console.error('Error:', error);

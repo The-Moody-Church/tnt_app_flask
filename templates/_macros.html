@@ -1,0 +1,36 @@
+{# Shared template pieces #}
+
+{% macro sync_note(sync, refresh_url) -%}
+{% if sync %}
+<div class="sync-note{% if sync.state in ['error', 'stale', 'skipped'] %} is-stale{% endif %}">
+    {% if sync.state in ['error', 'skipped'] %}
+    ⚠ Can’t reach MinistryPlatform{% if sync.synced_at %} · check-ins as of {{ sync.synced_at|time_short }}{% endif %}
+    {% elif sync.state == 'no_event' %}
+    No MP check-in event for this date
+    {% elif sync.synced_at %}
+    Check-ins updated {{ sync.synced_at|time_short }}
+    {% elif sync.state == 'pending' %}
+    Loading check-ins…
+    {% endif %}
+    {% if refresh_url %}<a class="refresh-btn" href="{{ refresh_url }}" aria-label="Refresh check-ins">↻</a>{% endif %}
+</div>
+{% endif %}
+{%- endmacro %}
+
+{% macro summary_bar(here_count, absent_count, show_all, sync, base_url) -%}
+<div class="summary-bar">
+    <div class="summary-counts"><strong>{{ here_count }}</strong> here · <strong>{{ absent_count }}</strong> not checked in</div>
+    {% if show_all %}
+    <a class="filter-toggle is-on" href="{{ base_url }}">Here only</a>
+    {% else %}
+    <a class="filter-toggle" href="{{ base_url }}?show=all">Show all</a>
+    {% endif %}
+</div>
+{{ sync_note(sync, base_url ~ ('?show=all&refresh=1' if show_all else '?refresh=1')) }}
+{%- endmacro %}
+
+{% macro present_label(kid) -%}
+{% if kid.source == 'mp' %}✓ Checked in{% if kid.mp_time %} · {{ kid.mp_time|time_short }}{% endif %}
+{% elif kid.source == 'manual' %}✋ Marked present{% if kid.manual_present_by %} by {{ kid.manual_present_by }}{% endif %}
+{% else %}Not checked in{% endif %}
+{%- endmacro %}

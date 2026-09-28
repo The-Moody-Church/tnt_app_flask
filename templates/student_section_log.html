@@ -1,37 +1,32 @@
 {% set show_header = true %}
 {% set page_title = "Section " + section_name %}
-{% set back_url = "/progress/student/" + student_name|urlencode %}
+{% set back_url = url_for('student_progress', contact_id=kid.contact_id) %}
 {% extends "base.html" %}
 
-{% block title %}TNT Reading Teams Tracker - {{ student_name }} - Section {{ section_name }}{% endblock %}
+{% block title %}TNT Reading Teams Tracker - {{ kid.name }} - Section {{ section_name }}{% endblock %}
 
 {% block content %}
-<a href="/progress/student/{{ student_name|urlencode }}" class="back-button">
-    ← Back to {{ student_name }}
-</a>
-
 <div class="page-header">
     <h1>Section {{ section_name }}</h1>
-    <p class="subtitle">{{ student_name }} &mdash; entry log</p>
+    <p class="subtitle">{{ kid.name }} &mdash; entry log</p>
 </div>
 
 <div class="kids-list">
     <h3>Recorded Entries</h3>
     {% if section_records %}
     <div class="kids-grid">
-        {% for index, record in section_records %}
-        <div class="section-row"
-             onclick="window.location.href='/progress/student/{{ student_name|urlencode }}/record/{{ index }}'">
+        {% for record in section_records %}
+        <a class="section-row" href="{{ url_for('student_section_details', contact_id=kid.contact_id, entry_id=record.id) }}">
             <div style="flex:1; min-width:0;">
-                <div style="font-size: 0.9em; font-weight: 600; color: #555;">{{ record.Date|date_to_mmdd }}</div>
+                <div style="font-size: 0.9em; font-weight: 600; color: #555;">{{ record.meeting_date|date_to_mmdd }}</div>
                 <div style="margin-top: 4px; font-size: 0.8em; white-space: nowrap;">
-                    {% if record.get('Section Complete')|string|lower in ['true', 'yes', '1'] %}✅{% else %}<span style="opacity:0.3;">⬜</span>{% endif %} Main
-                    &nbsp;{% if record.get('Silver Credit')|string|lower in ['true', 'yes', '1'] %}✅{% else %}<span style="opacity:0.3;">⬜</span>{% endif %} Silver
-                    &nbsp;{% if record.get('Gold Credit')|string|lower in ['true', 'yes', '1'] %}✅{% else %}<span style="opacity:0.3;">⬜</span>{% endif %} Gold
+                    {% if record.section_complete %}✅{% else %}<span style="opacity:0.3;">⬜</span>{% endif %} Main
+                    &nbsp;{% if record.silver_credit %}✅{% else %}<span style="opacity:0.3;">⬜</span>{% endif %} Silver
+                    &nbsp;{% if record.gold_credit %}✅{% else %}<span style="opacity:0.3;">⬜</span>{% endif %} Gold
                 </div>
             </div>
             <span style="font-size: 0.8em; color: #999;">Edit →</span>
-        </div>
+        </a>
         {% endfor %}
     </div>
     {% else %}

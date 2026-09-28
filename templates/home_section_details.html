@@ -1,55 +1,44 @@
 {% set show_header = true %}
-{% set page_title = kid_name %}
-{% set back_url = "/home/" + date_str + "/team/" + team_name %}
+{% set page_title = kid.name %}
+{% set back_url = url_for('home_team_details', date_str=date_str, team_name=team_name) if team_name != 'Unassigned' else url_for('home_details', date_str=date_str) %}
 {% extends "base.html" %}
 
-{% block title %}TNT Reading Teams Tracker - {{ kid_name }} - {{ section_name }}{% endblock %}
+{% block title %}TNT Reading Teams Tracker - {{ kid.name }} - {{ section_name }}{% endblock %}
 
 {% block content %}
-<a href="/home/{{ date_str }}/team/{{ team_name }}" class="back-button">
-    ← Back to {{ team_name }} Team
-</a>
-
 <div class="page-header">
-    <div class="team-badge {{ team_name|lower }}">{{ team_name }} Team</div>
-    <h1>{{ kid_name }}</h1>
-    <p class="subtitle">{{ section_name }} - {{ day_data.Date }}</p>
+    <div class="team-badge {{ team_name|lower }}">{{ team_name|team_title }}</div>
+    <h1>{{ kid.name }}</h1>
+    <p class="subtitle">{{ section_name }} - {{ day_data.meeting_date|date_display }}</p>
 </div>
 
 {% if section_entry %}
-<form id="editForm" method="POST" action="/edit_section">
+<form id="editForm" method="POST" action="{{ url_for('edit_section') }}">
     <input type="hidden" name="date_str" value="{{ date_str }}">
     <input type="hidden" name="team_name" value="{{ team_name }}">
-    <input type="hidden" name="kid_name" value="{{ kid_name }}">
-    <input type="hidden" name="section_name" value="{{ section_name }}">
-    
+    <input type="hidden" name="entry_id" value="{{ section_entry.id }}">
+
     <div class="attendance-details" id="attendanceDetails">
         <div class="details-header">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h3>Section Completion Details</h3>
-                <button type="button" class="edit-button" onclick="toggleEditMode()">Edit</button>
+                {% if writable %}<button type="button" class="edit-button" onclick="toggleEditMode()">Edit</button>{% endif %}
             </div>
         </div>
         <div class="details-list">
-            {% for key, value in section_entry.items() %}
-            {% if key not in ['Name', 'Team', 'Date', 'Section', 'timestamp', 'Timestamp'] %}
+            {% for field, _, label in [('section_complete', '', 'Section Complete'), ('silver_credit', '', 'Silver Credit'), ('gold_credit', '', 'Gold Credit')] %}
             <div class="detail-row">
-                <span class="detail-label">{{ key }}:</span>
+                <span class="detail-label">{{ label }}:</span>
                 <div class="detail-status">
                     <div class="status-display">
-                        {% if value and value|string|lower in ['true', 'yes', '1'] %}
-                        <span class="status-icon check">✓</span>
-                        {% else %}
-                        <span class="status-icon x">✗</span>
-                        {% endif %}
+                        {% if section_entry[field] %}<span class="status-icon check">✓</span>{% else %}<span class="status-icon x">✗</span>{% endif %}
                     </div>
                     <label class="toggle-switch">
-                        <input type="checkbox" name="{{ key }}" {% if value and value|string|lower in ['true', 'yes', '1'] %}checked{% endif %}>
+                        <input type="checkbox" name="{{ field }}" {% if section_entry[field] %}checked{% endif %}>
                         <span class="slider"></span>
                     </label>
                 </div>
             </div>
-            {% endif %}
             {% endfor %}
         </div>
         <div class="edit-buttons">
@@ -61,34 +50,9 @@
 {% else %}
 <div class="no-data">
     <h2>No Data Found</h2>
-    <p>No completion data found for {{ kid_name }} - {{ section_name }} on {{ day_data.Date }}.</p>
+    <p>No completion data found for {{ kid.name }} - {{ section_name }} on {{ day_data.meeting_date|date_display }}.</p>
 </div>
 {% endif %}
 {% endblock %}
 
-{% block extra_js %}
-<script>
-function toggleEditMode() {
-    const details = document.getElementById('attendanceDetails');
-    details.classList.toggle('edit-mode');
-}
-
-document.getElementById('editForm').addEventListener('submit', function(event) {
-    event.preventDefault();
-    const formData = new FormData(this);
-    fetch('/edit_section', {
-        method: 'POST',
-        body: formData
-    }).then(response => {
-        if (response.ok) {
-            window.location.reload();
-        } else {
-            alert('Error updating section completion');
-        }
-    }).catch(error => {
-        console.error('Error:', error);
-        alert('Error updating section completion');
-    });
-});
-</script>
-{% endblock %}
+{% block extra_js %}{% include "_edit_script.html" %}{% endblock %}

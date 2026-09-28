@@ -1,42 +1,47 @@
+{% from "_macros.html" import sync_note %}
 {% set show_header = true %}
-{% set page_title = day_data.Date %}
-{% set back_url = "/attendance" %}
+{% set page_title = day_data.meeting_date|date_display %}
+{% set back_url = url_for('attendance') %}
 {% extends "base.html" %}
 
-{% block title %}TNT Reading Teams Tracker - {{ day_data.Date }}{% endblock %}
+{% block title %}TNT Reading Teams Tracker - {{ day_data.meeting_date|date_display }}{% endblock %}
 
 {% block content %}
-<a href="/attendance" class="back-button">
-    ← Back to Schedule
-</a>
-
 <div class="page-header">
-    <h1>{{ day_data.Date }}</h1>
-    <p class="subtitle">{{ day_data.Theme }}</p>
+    <h1>{{ day_data.meeting_date|date_display }}</h1>
+    <p class="subtitle">{{ day_data.theme }}</p>
 </div>
-
 
 <div class="attendance-section">
     <h2>Weekly Attendance Totals</h2>
     {% if weekly_totals %}
     <div class="teams-grid">
         {% for team_data in weekly_totals %}
-        <div class="team-card" onclick="window.location.href='/attendance/{{ date_str }}/team/{{ team_data.Team }}'">
-            <div class="team-header {{ team_data.Team|lower }}">
-                {{ team_data.Team }} Team
+        <a class="team-card" href="{{ url_for('team_attendance_details', date_str=date_str, team_name=team_data.team) }}">
+            <div class="team-header {{ team_data.team|lower }}">
+                {{ team_data.team }} Team
             </div>
             <div class="team-data">
                 <div class="kids-present">
-                    Kids Present - {{ team_data.get('Kids Present', 0) }}
+                    Kids Present - {{ team_data.kids_present }}
                 </div>
             </div>
-        </div>
+        </a>
         {% endfor %}
+        {% if unassigned.total %}
+        <a class="team-card" href="{{ url_for('team_attendance_details', date_str=date_str, team_name='Unassigned') }}">
+            <div class="team-header unassigned">Unassigned</div>
+            <div class="team-data">
+                <div class="kids-present">Kids Present - {{ unassigned.here }}</div>
+            </div>
+        </a>
+        {% endif %}
     </div>
     {% else %}
     <div class="content-section">
         <p>No attendance data found for this date.</p>
     </div>
     {% endif %}
+    {{ sync_note(sync, None) }}
 </div>
 {% endblock %}
